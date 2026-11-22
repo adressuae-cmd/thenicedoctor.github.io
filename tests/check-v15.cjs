@@ -95,6 +95,15 @@ run('renderTick=()=>{}');
  assert(runKingdom("!S.tradeDeals.some(deal=>KINGDOM_REGION_IDS.has(deal.from)||KINGDOM_REGION_IDS.has(deal.to))"));
  runKingdom("validSave(JSON.parse(JSON.stringify(S)))");
 
+ runKingdom("S.options.infiniteCapital=true;setRelation('UHK','CHN',65)");
+ assert.equal(runKingdom("signTrade('CHN','import','energy',1)"),true);
+ runKingdom("$('step').onclick()");
+ assert(runKingdom('S.tradeFlows[0].value>0&&player().imports>0&&player().customs>0'));
+ assert(runKingdom('S.kingdom.treasury.last.borrowing>0&&S.kingdom.treasury.last.unfunded===0'));
+ runKingdom("S.options.debtPaused=true;$('step').onclick()");
+ assert(runKingdom('S.kingdom.treasury.last.borrowing===0&&S.kingdom.treasury.last.interest===0'));
+ runKingdom("validSave(JSON.parse(JSON.stringify(S)));startKingdom()");
+
  runKingdom(`
   S.options.freeReforms=true;S.options.fastReforms=true;
   enact({...player().targets,taxMode:'simple',tax:55,sovereignFund:5});
@@ -872,15 +881,33 @@ run('validSave(JSON.parse(JSON.stringify(S)))');
 
 // ---- V15: ideology presets pay for themselves.
 // V12 attached its budget fit in render(), but opening the Ideologies tab only calls renderPanel(),
-// so in play the fit never ran. The clicked path is DOM behaviour and is verified in a real browser;
-// here the funding function is exercised directly, and the retired hook is confirmed gone.
-assert(run("!render.toString().includes('fitToBudgetV12')"), 'the render-level preset hook is retired');
-assert(run("bindPanel.toString().includes('fundPresetV15')"), 'presets are funded where every panel draw binds');
+// so test the bound preset button after opening the panel as well as the funding calculation.
 run("newGame();applyDifficulty('medium',true);S.options.infiniteCapital=true");
 assert.equal(run('S.options.budgetFitPresets'), true, 'funded presets are on by default');
 run(`window.stageV15=(name)=>{const before={...player().targets},staged={...before,...PRESETS[name]};delete staged.desc;
  for(const k of ['taxMode',...TAX_KEYS,'housing','rentAid','zoning','transit','childcare'])staged[k]=before[k];
  return {before,staged,funded:fundPresetV15(staged,player(),before,name)};}`);
+// node-only:start
+for(const enabled of [true,false]){
+ const matches=run(`(()=>{
+  newGame();applyDifficulty('medium',true);view='policies';subview='ideologies';
+  S.options.budgetFitPresets=${enabled};
+  const button={dataset:{preset:'Democratic socialist'}};
+  const panel=$('panel'),query=panel.querySelectorAll;
+  panel.querySelectorAll=selector=>selector==='[data-preset]'&&subview==='ideologies'?[button]:query(selector);
+  try{
+   const expected=stageV15(button.dataset.preset);
+   renderPanel();
+   button.onclick();
+   const policy=${enabled}?expected.funded:expected.staged;
+   return draft.tax===policy.tax&&draft.otherTax===policy.otherTax;
+  }finally{
+   panel.querySelectorAll=query;
+  }
+ })()`);
+ assert(matches, 'preset buttons honor funding='+enabled+' when only the panel was drawn');
+}
+// node-only:end
 for (const name of Object.keys(JSON.parse(run('JSON.stringify(PRESETS)')))) {
  run(`window.pv=stageV15(${JSON.stringify(name)})`);
  assert(run('fiscal(player(),window.pv.funded).balance>=Math.max(fiscal(player(),window.pv.before).balance,startBalanceV15())-.6'),
