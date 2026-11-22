@@ -143,6 +143,55 @@ run('renderTick=()=>{}');
  reloaded.run('validSave(JSON.parse(JSON.stringify(S)))');
  console.log('PASS: kingdom integration, 28 administrative regions, consolidated balances and 120 months');
 }
+// Industrial orders preserve construction, material balances and treasury cash.
+{
+ const game=makeGame('build/v15.html'),r=game.run;
+ r("startKingdom()");
+ assert.equal(r("approveRoyalFacility('oil','SAU')"),false,'construction requires treasury cash');
+ r(`S.options.freeReforms=true;S.options.fastReforms=true;
+  enact({...player().targets,taxMode:'simple',tax:55});$('step').onclick();`);
+ assert.equal(r("approveRoyalFacility('oil','JOR')"),false,'extraction requires a regional deposit');
+ r("window.cashBefore=S.kingdom.treasury.cash");
+ assert.equal(r("approveRoyalFacility('refinery','SAU')"),true);
+ assert(r('Math.abs(S.kingdom.treasury.cash-cashBefore+INDUSTRIAL_SITES.refinery.capital)<1e-9'));
+ assert.equal(r("approveRoyalFacility('refinery','SAU')"),false,'duplicate approvals are atomic');
+ r("for(let i=0;i<4;i++)$('step').onclick()");
+ assert.equal(r('S.kingdom.industry.last.runs[0].output'),0,'refinery lacks electricity and inputs');
+ for(const [type,region] of [['oil','SAU'],['gas','QAT'],['mine','MRT'],['power','SAU'],['steel','SAU']]){
+  assert(r(`approveRoyalFacility('${type}','${region}')`));
+ }
+ r("for(let i=0;i<5;i++)$('step').onclick()");
+ assert(r(`S.kingdom.industry.last.runs.every(site=>site.output>0)&&
+  S.kingdom.industry.last.powerUsed<=S.kingdom.industry.last.generated&&
+  S.kingdom.industry.last.sales.steel.quantity>0&&
+  S.kingdom.industry.reserves.oil.SAU<INDUSTRIAL_SITES.oil.deposits.SAU`));
+ assert(r(`Math.abs(S.kingdom.treasury.cash-S.kingdom.treasury.last.closing
+  +S.kingdom.industry.last.spent-S.kingdom.industry.last.revenue)<1e-8`));
+ const checkpoint=r('JSON.stringify(S)');
+ const fresh=makeGame('build/v15.html');
+ fresh.scope.checkpoint=checkpoint;
+ fresh.run('loadSave(checkpoint)');
+ assert(fresh.run('JSON.stringify(S)')===checkpoint);
+ r("$('step').onclick()");
+ fresh.run("$('step').onclick()");
+ assert(fresh.run('JSON.stringify(S)')===r('JSON.stringify(S)'),'production continues deterministically');
+ game.scope.checkpoint=checkpoint;
+ assert(r(`(()=>{
+  const {stock,last}=S.kingdom.industry;
+  const balances=JSON.parse(checkpoint).kingdom.industry.stock;
+  for(const run of last.runs){
+   const spec=INDUSTRIAL_SITES[run.type];
+   if(spec.good)balances[spec.good]+=run.output;
+   if(spec.input)balances[spec.input[0]]-=spec.input[1]*run.output/spec.output;
+  }
+  return Object.keys(stock).every(good=>Math.abs(balances[good]-last.sales[good].quantity-stock[good])<1e-8);
+ })()`),'inventories reconcile with production, consumption and sales');
+ assert.throws(()=>fresh.run("let malformed=JSON.parse(checkpoint);malformed.kingdom.industry.stock.oil=-1;loadSave(JSON.stringify(malformed))"));
+ fresh.run("let legacy=JSON.parse(checkpoint);delete legacy.kingdom.industry;loadSave(JSON.stringify(legacy))");
+ assert.equal(fresh.run('S.kingdom.industry.facilities.length'),0,'old kingdom saves gain an empty industry');
+ assert(fresh.run("!/[A-Za-z]/.test(dateText())&&kingdomLabel('Economy')==='الاقتصاد'"));
+ console.log('PASS: industrial finance, input and power constraints, facilities, production and save migration');
+}
 // node-only:end
 
 // ---- V6 boots into Easy, which is a world with no national debt at all.

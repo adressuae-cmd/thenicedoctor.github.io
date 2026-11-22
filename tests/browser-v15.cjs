@@ -115,11 +115,17 @@ async function main() {
       fund: player().fund, cash: S.kingdom.treasury.cash, orders: S.kingdom.treasury.transfers.length,
     }));
     assert.deepEqual(savedFinances, { fund: opening / 2, cash: opening / 2, orders: 1 });
+    assert.equal(await kingdom.locator('html').getAttribute('dir'), 'rtl');
+    assert.equal(await kingdom.locator('[data-view="economy"] .navlabel').innerText(), 'الاقتصاد');
+    await kingdom.locator('#royalFacility').selectOption('refinery');
+    await kingdom.locator('#royalApproveFacility').click();
+    assert(await kingdom.evaluate(() => S.kingdom.industry.facilities.some(x=>x.type==='refinery'&&x.region==='PSE')));
     await kingdom.locator('#saveTop').click();
     await kingdom.reload();
     await kingdom.locator('#startLoad2').click();
     assert.equal(await kingdom.locator('#royalRegion').inputValue(), 'PSE');
     assert.equal(await kingdom.evaluate(() => player().fund), savedFinances.fund);
+    assert.equal(await kingdom.evaluate(() => S.kingdom.industry.facilities.length), 1);
     assert(await kingdom.evaluate(() => player().cities.find(city => city.id === 'PSE-0').queue.length === 1));
     assert.deepEqual(await advanceToDecade(kingdom), { month: 120, year: 2000, finiteOutput: true });
     await kingdom.locator('#saveTop').click();
@@ -128,7 +134,7 @@ async function main() {
     assert.equal(await kingdom.evaluate(() => S.month), 120);
     assert(await kingdom.evaluate(() => player().cities.find(city => city.id === 'PSE-0').levels.hospital === 1));
     assert.deepEqual(errors, []);
-    console.log('PASS: 120 browser months in both scenarios, map selection, city project, saved sovereign transfer and save imports.');
+    console.log('PASS: 120 browser months in both scenarios, map selection, city project, Arabic navigation, industrial approval and save imports.');
   } finally {
     try {
       await browser?.close();

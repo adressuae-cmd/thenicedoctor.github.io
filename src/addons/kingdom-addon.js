@@ -137,7 +137,7 @@ function startKingdom(){
  S.nations=S.nations.filter(n=>!KINGDOM_REGION_IDS.has(n.id));
  S.nations.push(realm);
  S.kingdom={region:'SAU',government:'centralized-monarchy',capital:KINGDOM.capital,
-  treasury:{cash:0,last:null,transfers:[]}};
+  treasury:{cash:0,last:null,transfers:[]},industry:emptyRoyalIndustry()};
  S.startYear=1990;
  S.startMonth=0;
  S.options.historyEvents=false;
@@ -165,6 +165,7 @@ function startKingdom(){
 const originalSaveValidatorKingdom=validSave;
 validSave=function(s){
  if(s?.kingdom){
+  validateRoyalIndustry(s.kingdom.industry,s.month);
   const hasInternalPartner=key=>key.split(':').some(id=>KINGDOM_REGION_IDS.has(id));
   if(Object.keys(s.relations??{}).some(hasInternalPartner)){
    throw Error('لا تُسجّل علاقات دبلوماسية مع أقاليم المملكة.');

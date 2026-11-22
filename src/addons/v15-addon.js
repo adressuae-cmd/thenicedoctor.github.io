@@ -373,7 +373,10 @@ loadSave=function(text){
  try{
   parsed=JSON.parse(text);
   prepareCityCatalogV15();
-  if(parsed?.kingdom)registerKingdomCities();
+  if(parsed?.kingdom){
+   registerKingdomCities();
+   if(parsed.kingdom.industry===undefined)parsed.kingdom.industry=emptyRoyalIndustry();
+  }
   parsed=migrateSave(parsed);
   validSave(parsed);
  }catch(error){
@@ -400,5 +403,5 @@ loadSave=function(text){
  rebuildNeighboursV12();
  initPaths();
  render();
- toast('Saved world restored.');
+ toast(kingdomLabel('Saved world restored.'));
 };

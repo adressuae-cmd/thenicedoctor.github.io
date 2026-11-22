@@ -41,6 +41,34 @@ rep("if(id)choose(id)}drag=null",
     "if(id)selectMapNationKingdom(id,e.clientX-r.left,e.clientY-r.top)}drag=null")
 
 
+# Shared labels keep the same view IDs and actions in both languages.
+rep("dateText=()=>gameDate(S.month).toLocaleDateString('en',",
+    "dateText=()=>gameDate(S.month).toLocaleDateString(S.kingdom?'ar':'en',")
+rep("""title="'+l+'">'+icon(v)+'<span class="navlabel">'+l+'</span>""",
+    """title="'+kingdomLabel(l)+'">'+icon(v)+'<span class="navlabel">'+kingdomLabel(l)+'</span>""", count=2)
+for en in ('National output', 'Population', 'Public approval', 'Political capital'):
+    rep(f'<label>{en}</label>', "'+'<label>'+kingdomLabel('" + en + "')+'</label>'+'", count=s.count(f'<label>{en}</label>'))
+for original in (
+    "playing?'Pause simulation':'Play simulation'", "playing?'Simulation running':'Simulation paused'",
+    "n.approval>55?'Supportive':'Contested'", "infiniteCapital(n)?'Unlimited':'/ 100'",
+):
+    rep(original, f"kingdomLabel({original})", count=s.count(original))
+for message in ('World saved to this browser.',):
+    rep(f"toast('{message}')", f"toast(kingdomLabel('{message}'))")
+
+rep("owned?'Your nation':'Nation intelligence'", "kingdomLabel(owned?'Your nation':'Nation intelligence')")
+rep("""<select aria-label="Select nation" id="nationSelect">""",
+    """<select aria-label="'+kingdomLabel('Select nation')+'" id="nationSelect">""")
+rep("a.name.localeCompare(b.name)).map(c=>'<option",
+    "kingdomNationName(a).localeCompare(kingdomNationName(b),S.kingdom?'ar':undefined)).map(c=>'<option")
+rep("+'>'+c.name+'</option>'", "+'>'+escapeHTML(kingdomNationName(c))+'</option>'")
+rep("""<h2>'+escapeHTML(n.name)+'</h2>""", """<h2>'+escapeHTML(kingdomNationName(n))+'</h2>""")
+rep("""+'">'+label+'</button>').join('')+'</div>';$('nationSelect')""",
+    """+'">'+kingdomLabel(label)+'</button>').join('')+'</div>';$('nationSelect')""")
+rep("'Playing as '+n.name+' · '+(playing?'Time is advancing':'Time is paused')",
+    "kingdomLabel('Playing as ')+kingdomNationName(n)+' · '+kingdomLabel(playing?'Time is advancing':'Time is paused')")
+rep("n.name.toUpperCase()", "kingdomNationName(n).toUpperCase()")
+
 # V12 attached its budget fit in render(). Opening the Ideologies tab only calls renderPanel(), which
 # rebinds the preset buttons without it, so in ordinary play the fit never ran. V15 attaches preset
 # funding in bindPanel, which every panel draw goes through; the render-level hook is retired so the
@@ -99,7 +127,7 @@ kingdom_map = (SRC / 'data' / 'kingdom-map-supplement.json').read_text().strip()
 rep('<script id="world-data"', '<script type="application/json" id="kingdom-map">'
     + kingdom_map + '</script>\n<script id="world-data"')
 addon = '\n'.join((SRC / 'addons' / name).read_text()
-                  for name in ('v15-addon.js', 'kingdom-addon.js', 'kingdom-finance.js'))
+                  for name in ('v15-addon.js', 'kingdom-addon.js', 'kingdom-finance.js', 'kingdom-industry.js', 'kingdom-locale.js'))
 rep('newGame();initPaths();render();installMobileMap();startScreen();',
     addon + '\nnewGame();initPaths();render();installMobileMap();startScreen();')
 

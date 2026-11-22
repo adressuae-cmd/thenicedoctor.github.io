@@ -328,7 +328,7 @@ const GEO=JSON.parse($('world-data').textContent); let S,selected='BRA',view='ov
 function random(){S.seed=(Math.imul(S.seed,1664525)+1013904223)>>>0;return S.seed/4294967296}
 function seedNation(row){const[id,name,pop,gdp,debt,growth,inflation,liberties,institutions,preset,lon,lat,flag]=row;const p={...PRESETS[preset]};delete p.desc;Object.assign(p,{liberties,institutions});return{...housingState(),...urbanSeed(pop,gdp,id),id,name,pop,gdp,debt:gdp*debt/100,growth,inflation,policies:{...p},targets:{...p},capacity:institutions,capital:65,approval:62,stability:clamp(45+institutions*.45-inflation*.12,20,92),inequality:clamp(55-p.welfare*.7-p.labor*.12,22,58),human:55+institutions*.32,infra:45+institutions*.3,clean:p.climate*.65,military:gdp*p.defense/100*3,readiness:70,unemployment:6,lon,lat,flag,preset,election:48,shock:0,shockMonths:0,history:[gdp],war:null};}
 function newGame(){S={version:3,month:0,seed:20260908,player:'BRA',nations:SEEDS.map(seedNation),relations:{},treaties:[],sanctions:[],events:[],options:{ai:true,shocks:true,freeReforms:false,infiniteCapital:false}};const known=new Set(S.nations.map(n=>n.id));for(const g of GEO){if(known.has(g.id)||g.id==='ATA')continue;const row=[g.id,g.name,g.pop?g.pop/1e6:12,g.gdp?g.gdp/1000:70,55,2.5,4,60,55,'Social liberal',g.lon||0,g.lat||0,'🌐'];S.nations.push(seedNation(row));known.add(g.id);}selected=S.player;view='overview';subview='overview';draft=null;dirty=false;addEvent('The next chapter is yours','Take the helm of Brazil, or select another nation. Open Policies to draft your first reform.','dispatch');addEvent('A connected world','All nations advance together. Trade, fiscal pressure and institutions shape their paths.','world');addEvent('Scenario, not a forecast','2026 starting conditions are approximate. Review the model and sources in the field guide.','model');}
-const nation=id=>S.nations.find(n=>n.id===id),player=()=>nation(S.player),current=()=>nation(selected),dateText=()=>gameDate(S.month).toLocaleDateString('en',{month:'long',year:'numeric',timeZone:'UTC'});
+const nation=id=>S.nations.find(n=>n.id===id),player=()=>nation(S.player),current=()=>nation(selected),dateText=()=>gameDate(S.month).toLocaleDateString(S.kingdom?'ar':'en',{month:'long',year:'numeric',timeZone:'UTC'});
 function ideology(p){let best='',distance=Infinity;for(const[k,v]of Object.entries(PRESETS)){let d=0;for(const x of POLICY.filter(x=>!IDEOLOGY_EXEMPT.includes(x.key)&&!x.tax)){d+=((p[x.key]-v[x.key])/(x.max-x.min))**2;}if(d<distance){distance=d;best=k}}return{label:best,mixed:distance>.18};}
 function regime(n){return n.policies.institutions>=70?(n.policies.liberties>=65?'Constitutional democracy':'Electoral system · constrained rights'):n.policies.institutions>=40?'Hybrid institutions':'Concentrated executive power'}
 function fiscal(n,p=n.policies){const efficiency=.75+n.capacity*.0025,taxationData=taxation(p),personalRevenue=taxationData.personal*efficiency,otherRevenue=taxationData.other*efficiency,assetRevenue=p.ownership*.025*(n.capacity/60),revenue=personalRevenue+otherRevenue+assetRevenue,housingMaintenance=n.publicHousing*.035,cityProgram=p.urbanization+p.industrial+p.slumUpgrade+p.ruralInvest,debtAdmin=p.borrowing*.004,spending=p.services+p.welfare+p.investment+p.defense+5+p.climate*.02+p.housing+p.rentAid+p.transit+p.childcare+housingMaintenance+cityProgram+debtAdmin,
@@ -371,7 +371,7 @@ function simulateMonth(){const started=performance.now();S.month++;prepareV4Mont
 function resolveWars(){const done=new Set();for(const a of S.nations){if(!a.war||done.has(a.id))continue;const b=nation(a.war.target);if(!b||!b.war){a.war=null;continue}done.add(a.id);done.add(b.id);a.war.months++;b.war.months++;const strength=n=>Math.max(1,n.military*n.readiness/100),ratio=strength(a)/strength(b);const progress=clamp((ratio-1)/(ratio+1)*7+(random()-.5)*3,-8,8);a.war.progress=clamp(a.war.progress+progress,-100,100);b.war.progress=-a.war.progress;a.military*=.988;b.military*=.988;if(Math.abs(a.war.progress)>=65||a.war.months>=30){const winner=a.war.progress>=0?a:b,loser=winner===a?b:a;const reparations=Math.min(loser.gdp*.035,winner.gdp*.015);loser.debt+=reparations;winner.debt=Math.max(0,winner.debt-reparations);loser.stability-=8;setRelation(a.id,b.id,-45);a.war=null;b.war=null;addEvent('Ceasefire agreed',winner.name+' secured leverage over '+loser.name+'. Reparations and a ceasefire end the conflict. Borders remain unchanged.','security');}}}
 function reformCost(n,values){let c=values.taxMode!==n.targets.taxMode?12:0;for(const x of POLICY.filter(x=>policyActive(x,values)))c+=Math.abs(values[x.key]-n.targets[x.key])/(x.max-x.min)*19;return c>1e-8?Math.ceil(c):0;}
 function enact(values){const n=current();if(n.id!==S.player)throw Error('Assume control to enact reforms.');for(const x of POLICY)if(typeof values[x.key]!=='number'||!Number.isFinite(values[x.key])||values[x.key]<x.min||values[x.key]>x.max)throw Error('Policy values are outside their allowed range.');const problem=taxProblem(values);if(problem)throw Error(problem);const cost=reformCost(n,values);if(!S.options.freeReforms&&!canSpend(n,cost))throw Error('Not enough political capital. Make a smaller reform or advance time.');if(!cost){toast('No policy changes to enact.');return;}n.targets={...values};if(!S.options.freeReforms)spendCapital(n,cost);if(values.taxMode==='progressive'&&taxProblem({...n.policies,taxMode:'progressive'})){const ordered=BRACKET_KEYS.map(k=>n.policies[k]).sort((a,b)=>a-b);BRACKET_KEYS.forEach((k,i)=>n.policies[k]=ordered[i]);}n.approval=clamp(n.approval-cost*.065,5,95);addEvent('Reform package adopted',n.name+' sets a new policy direction. Implementation will phase in over the coming months and years.','politics');dirty=false;draft={...n.targets};toast('Reform enacted. Advance time to see its effects.');render();}
-function startPause(force){playing=force===undefined?!playing:force;clearInterval(timer);if(playing)timer=setInterval(()=>{if(!document.hidden)simulateMonth()},Math.max(100,(S?.options?.monthSeconds??8)*1000/speed));$('play').textContent=playing?'Ⅱ':'▶';$('play').setAttribute('aria-label',playing?'Pause simulation':'Play simulation');$('runstatus').textContent=playing?'Simulation running':'Simulation paused';}
+function startPause(force){playing=force===undefined?!playing:force;clearInterval(timer);if(playing)timer=setInterval(()=>{if(!document.hidden)simulateMonth()},Math.max(100,(S?.options?.monthSeconds??8)*1000/speed));$('play').textContent=playing?'Ⅱ':'▶';$('play').setAttribute('aria-label',kingdomLabel(playing?'Pause simulation':'Play simulation'));$('runstatus').textContent=kingdomLabel(playing?'Simulation running':'Simulation paused');}
 function toast(s){$('toast').textContent=s;$('toast').hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>$('toast').hidden=true,4300)}
 function choose(id){if(!nation(id))return;selected=id;draft=null;dirty=false;render();requestDraw();}
 function setView(v){if(v==='help'){showGuide();return}view=v;subview=v==='policies'?'reforms':'overview';draft=null;dirty=false;render();if(innerWidth<800)$('countryhead').scrollIntoView({behavior:'smooth',block:'start'});}
@@ -379,9 +379,9 @@ function assumeControl(){S.player=selected;draft=null;dirty=false;addEvent('A ne
 function provenance(n){const g=GEO.find(g=>g.id===n.id);return SEEDS.some(r=>r[0]===n.id)?'Illustrative 2026 scenario. Values and policy settings are hand-authored assumptions.':('Historical baseline: population '+(g?.popYear||'unspecified')+', GDP '+(g?.gdpYear||'unspecified')+' from Natural Earth. Other settings are generic game assumptions.');}
 const metric=(name,value,cls='')=>'<div class="metricrow"><span>'+name+'</span><strong class="'+cls+'">'+value+'</strong></div>';
 function sparkline(values){const low=Math.min(...values)*.996,high=Math.max(...values)*1.004,range=high-low||1;const pts=values.map((v,i)=>[i/Math.max(1,values.length-1)*300,70-(v-low)/range*63]);if(pts.length===1)pts.push([300,pts[0][1]]);const d=pts.map((p,i)=>(i?'L':'M')+p.map(v=>v.toFixed(1)).join(',')).join(' ');return '<svg class="trend" viewBox="0 0 300 80" preserveAspectRatio="none" aria-label="Output history"><defs><linearGradient id="fade" x2="0" y2="1"><stop stop-color="#8bb8a4" stop-opacity=".17"/><stop offset="1" stop-color="#8bb8a4" stop-opacity="0"/></linearGradient></defs><path d="'+d+' L300,80 L0,80 Z" fill="url(#fade)"/><path d="'+d+'" fill="none" stroke="#8bb8a4" stroke-width="1.8"/></svg>'}
-function renderStats(){const n=player();$('stats').innerHTML='<div class="stat"><label>National output</label><div class="value">'+money(n.gdp)+'<small class="'+(n.growth<0?'negative':'')+'">'+pct(n.growth)+'</small></div></div><div class="stat"><label>Population</label><div class="value">'+(n.pop>=1000?(n.pop/1000).toFixed(2)+'B':n.pop.toFixed(1)+'M')+'</div></div><div class="stat"><label>Public approval</label><div class="value">'+n.approval.toFixed(0)+'%<small>'+(n.approval>55?'Supportive':'Contested')+'</small></div></div><div class="stat"><label>Political capital</label><div class="value">'+(infiniteCapital(n)?'∞':Math.floor(n.capital))+'<small>'+(infiniteCapital(n)?'Unlimited':'/ 100')+'</small></div></div>';$('date').textContent=dateText();$('performance').textContent=S.nations.length+' nations · '+(perf?perf.toFixed(1)+' ms / month':'Simulation ready');$('mapcaption').textContent='Playing as '+n.name+' · '+(playing?'Time is advancing':'Time is paused');}
+function renderStats(){const n=player();$('stats').innerHTML='<div class="stat">'+'<label>'+kingdomLabel('National output')+'</label>'+'<div class="value">'+money(n.gdp)+'<small class="'+(n.growth<0?'negative':'')+'">'+pct(n.growth)+'</small></div></div><div class="stat">'+'<label>'+kingdomLabel('Population')+'</label>'+'<div class="value">'+(n.pop>=1000?(n.pop/1000).toFixed(2)+'B':n.pop.toFixed(1)+'M')+'</div></div><div class="stat">'+'<label>'+kingdomLabel('Public approval')+'</label>'+'<div class="value">'+n.approval.toFixed(0)+'%<small>'+(kingdomLabel(n.approval>55?'Supportive':'Contested'))+'</small></div></div><div class="stat">'+'<label>'+kingdomLabel('Political capital')+'</label>'+'<div class="value">'+(infiniteCapital(n)?'∞':Math.floor(n.capital))+'<small>'+(kingdomLabel(infiniteCapital(n)?'Unlimited':'/ 100'))+'</small></div></div>';$('date').textContent=dateText();$('performance').textContent=S.nations.length+' nations · '+(perf?perf.toFixed(1)+' ms / month':'Simulation ready');$('mapcaption').textContent=kingdomLabel('Playing as ')+kingdomNationName(n)+' · '+kingdomLabel(playing?'Time is advancing':'Time is paused');}
 function renderEvents(){const es=S.events.slice(0,3);$('events').innerHTML=es.map(e=>'<article class="event"><div class="tag '+(e.tag==='warning'?'warning':'')+'">'+escapeHTML(e.tag)+'</div><p>'+escapeHTML(e.title)+'. '+escapeHTML(e.body.slice(0,95))+(e.body.length>95?'…':'')+'</p><time>'+gameDate(e.month).toLocaleDateString('en',{month:'short',year:'numeric',timeZone:'UTC'})+'</time></article>').join('');}
-function renderHead(){const n=current(),owned=n.id===S.player;const tabs=view==='policies'?[['reforms','Reforms'],['programs','Programs'],['taxation','Taxation'],['ideologies','Ideologies']]:view==='overview'?[['overview','Overview'],['society','Society']]:[];$('countryhead').innerHTML='<div class="eyebrow">'+(owned?'Your nation':'Nation intelligence')+'</div><div class="countryrow"><span class="flag">'+n.flag+'</span><h2>'+escapeHTML(n.name)+'</h2></div><div class="countrymeta">'+regime(n)+'</div><select aria-label="Select nation" id="nationSelect">'+[...S.nations].sort((a,b)=>a.name.localeCompare(b.name)).map(c=>'<option value="'+c.id+'"'+(c.id===n.id?' selected':'')+'>'+c.name+'</option>').join('')+'</select><div class="subtabs">'+tabs.map(([k,label])=>'<button data-sub="'+k+'" class="'+(subview===k||(k==='programs'&&subview==='program')?'active':'')+'">'+label+'</button>').join('')+'</div>';$('nationSelect').onchange=e=>choose(e.target.value);$('countryhead').querySelectorAll('[data-sub]').forEach(b=>b.onclick=()=>{subview=b.dataset.sub;renderHead();renderPanel()});}
+function renderHead(){const n=current(),owned=n.id===S.player;const tabs=view==='policies'?[['reforms','Reforms'],['programs','Programs'],['taxation','Taxation'],['ideologies','Ideologies']]:view==='overview'?[['overview','Overview'],['society','Society']]:[];$('countryhead').innerHTML='<div class="eyebrow">'+(kingdomLabel(owned?'Your nation':'Nation intelligence'))+'</div><div class="countryrow"><span class="flag">'+n.flag+'</span><h2>'+escapeHTML(kingdomNationName(n))+'</h2></div><div class="countrymeta">'+regime(n)+'</div><select aria-label="'+kingdomLabel('Select nation')+'" id="nationSelect">'+[...S.nations].sort((a,b)=>kingdomNationName(a).localeCompare(kingdomNationName(b),S.kingdom?'ar':undefined)).map(c=>'<option value="'+c.id+'"'+(c.id===n.id?' selected':'')+'>'+escapeHTML(kingdomNationName(c))+'</option>').join('')+'</select><div class="subtabs">'+tabs.map(([k,label])=>'<button data-sub="'+k+'" class="'+(subview===k||(k==='programs'&&subview==='program')?'active':'')+'">'+kingdomLabel(label)+'</button>').join('')+'</div>';$('nationSelect').onchange=e=>choose(e.target.value);$('countryhead').querySelectorAll('[data-sub]').forEach(b=>b.onclick=()=>{subview=b.dataset.sub;renderHead();renderPanel()});}
 function overview(n){const ide=ideology(n.policies);if(subview==='society')return '<div class="block"><h3>Society & institutions</h3>'+metric('Civil liberties',n.policies.liberties.toFixed(0)+' / 100')+metric('Institutional strength',n.capacity.toFixed(0)+' / 100')+metric('Income inequality',n.inequality.toFixed(1)+' / 100')+metric('Unemployment',n.unemployment.toFixed(1)+'%')+metric('Human capital',n.human.toFixed(0)+' / 100')+metric('Clean energy progress',n.clean.toFixed(0)+' / 100')+metric('Urban population',n.urban.toFixed(1)+'%')+metric('Living informally',n.slums.toFixed(1)+'%')+metric('Public housing stock',n.publicHousing.toFixed(1)+'% of housing need')+metric('Effective renter burden',n.rentBurden.toFixed(1)+'% of income')+metric('Housing supply index',n.housingSupply.toFixed(0)+' / 100')+'</div><div class="block"><h3>Political calendar</h3>'+metric('Next election',n.policies.institutions>=60?n.election+' months':'No competitive cycle')+'<p>Institutions and liberties are independent of the left–right economic spectrum. Elections allocate seats between the fictional parties. Coalition platforms can be staged from the Parties view.</p></div><p class="note">Social indicators are game indices. They are not measured current country scores.</p>';
 return (n.id!==S.player?'<button class="primary full" data-action="assume">Play as '+escapeHTML(n.name)+'</button><p>Switch perspective without restarting the world.</p>':'<div class="hudtip">Your next move: draft a reform in <b>Policies</b>, then advance time with <b>▶</b> or <b>▸|</b>.</div>')+'<div class="block"><h3>National outlook</h3>'+metric('Stability',n.stability.toFixed(0)+' / 100','positive')+'<div class="bar"><div style="width:'+n.stability+'%"></div></div>'+metric('Public approval',n.approval.toFixed(0)+'%')+metric('Inflation',n.inflation.toFixed(1)+'%',n.inflation>6?'negative':'')+metric('Government debt',(n.debt/n.gdp*100).toFixed(1)+'% of GDP',n.debt/n.gdp>1?'neutral':'')+'</div><div class="block"><div class="sectionhead"><h3 style="margin:0">Economic trajectory</h3><span class="positive" style="font-size:12px">'+pct(n.growth)+'</span></div>'+sparkline(n.history)+'<div class="chartlabels"><span>START OF RECORDED PERIOD</span><span>'+dateText().toUpperCase()+'</span></div></div><div class="ideologybox"><div class="eyebrow">Economic policy profile</div><strong>'+ide.label+(ide.mixed?' · mixed':'')+'</strong><p>'+PRESETS[ide.label].desc+'</p></div><button class="full" data-action="policies">Shape domestic policy <span style="float:right">→</span></button><p class="keyboardhint">Space: play / pause &nbsp; · &nbsp; N: next month</p><p class="note">'+provenance(n)+'</p>';}
 function policyControl(x,n){return(x.group?'<div class="eyebrow policygroup">'+x.group+'</div>':'')+'<div class="policy"><label class="metricrow" for="p-'+x.key+'"><span>'+x.name+'</span><output id="o-'+x.key+'">'+draft[x.key].toFixed(x.step<1?2:0)+' '+x.unit+'</output></label><input type="range" id="p-'+x.key+'" data-policy="'+x.key+'" min="'+x.min+'" max="'+x.max+'" step="'+x.step+'" value="'+draft[x.key]+'" '+(n.id!==S.player?'disabled':'')+'><div class="policylive"><span>Current: '+n.policies[x.key].toFixed(1)+'</span><span>Target: '+n.targets[x.key].toFixed(1)+'</span></div><small>'+x.desc+'</small></div>';}
@@ -440,13 +440,13 @@ function bindPrograms(){
  $('panel').querySelectorAll('[data-stage]').forEach(b=>b.onclick=()=>{const pr=PROGRAMS.find(x=>x.key===b.dataset.stage);draft={...draft,...pr.stage};dirty=true;renderPanel();toast(pr.name+' staged. Review the budget, then enact.');});
  $('panel').querySelectorAll('[data-relief]').forEach(b=>b.onclick=()=>debtRelief(b.dataset.relief));}
 function bindPanel(){bindPrograms();if($('taxMode'))$('taxMode').onchange=e=>{draft.taxMode=e.target.value;if(draft.taxMode==='progressive'){const ordered=BRACKET_KEYS.map(k=>draft[k]).sort((a,b)=>a-b);BRACKET_KEYS.forEach((k,i)=>draft[k]=ordered[i]);}dirty=true;renderPanel();};if($('housingPackage'))$('housingPackage').onclick=()=>{draft={...draft,housing:6,zoning:80};dirty=true;renderPanel();toast('Mass housing staged: 6% GDP construction and permitting reform.');};$('panel').querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>actions[b.dataset.action]?.());$('panel').querySelectorAll('[data-policy]').forEach(el=>el.oninput=()=>{draft[el.dataset.policy]=Number(el.value);dirty=true;const x=POLICY.find(x=>x.key===el.dataset.policy);$('o-'+x.key).textContent=Number(el.value).toFixed(x.step<1?2:0)+' '+x.unit;updateReformPreview();});$('panel').querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>{const p={...PRESETS[b.dataset.preset]};delete p.desc;const keep=draft||current().targets;draft={...keep,...p};for(const key of ['taxMode',...TAX_KEYS,'housing','rentAid','zoning','transit','childcare'])draft[key]=keep[key];dirty=true;subview='reforms';renderHead();renderPanel();toast('Preset staged. Adjust the sliders, then enact.');});if($('enact'))$('enact').onclick=()=>{try{enact(draft)}catch(e){toast(e.message)}};if($('inspectPartner'))$('inspectPartner').onclick=()=>choose($('partner').value);$('panel').querySelectorAll('[data-diplomacy]').forEach(b=>b.onclick=()=>diplomacy(b.dataset.diplomacy));$('panel').querySelectorAll('[data-option]').forEach(el=>el.onchange=()=>{S.options[el.dataset.option]=el.checked;renderStats();toast(el.dataset.option==='infiniteCapital'?(el.checked?'Infinite political capital enabled.':'Normal political capital restored.'):'Sandbox rule updated.');});}
-function render(){renderStats();renderEvents();$('navigation').innerHTML=[['overview','Overview'],['cities','Cities'],['parties','Parties'],['policies','Policies'],['agencies','Agencies'],['economy','Economy'],['growth','Growth'],['monetary','Central bank'],['trade','Trade'],['diplomacy','Diplomacy'],['military','Military'],['history','Dispatch']].map(([v,l])=>'<button data-view="'+v+'" class="'+(view===v?'active':'')+'" title="'+l+'">'+icon(v)+'<span class="navlabel">'+l+'</span></button>').join('')+'<div class="spacer"></div>'+[['settings','Sandbox'],['help','Guide']].map(([v,l])=>'<button data-view="'+v+'" class="'+(view===v?'active':'')+'" title="'+l+'">'+icon(v)+'<span class="navlabel">'+l+'</span></button>').join('');$('navigation').querySelectorAll('button').forEach(b=>b.onclick=()=>setView(b.dataset.view));renderHead();renderPanel();requestDraw();}
+function render(){renderStats();renderEvents();$('navigation').innerHTML=[['overview','Overview'],['cities','Cities'],['parties','Parties'],['policies','Policies'],['agencies','Agencies'],['economy','Economy'],['growth','Growth'],['monetary','Central bank'],['trade','Trade'],['diplomacy','Diplomacy'],['military','Military'],['history','Dispatch']].map(([v,l])=>'<button data-view="'+v+'" class="'+(view===v?'active':'')+'" title="'+kingdomLabel(l)+'">'+icon(v)+'<span class="navlabel">'+kingdomLabel(l)+'</span></button>').join('')+'<div class="spacer"></div>'+[['settings','Sandbox'],['help','Guide']].map(([v,l])=>'<button data-view="'+v+'" class="'+(view===v?'active':'')+'" title="'+kingdomLabel(l)+'">'+icon(v)+'<span class="navlabel">'+kingdomLabel(l)+'</span></button>').join('');$('navigation').querySelectorAll('button').forEach(b=>b.onclick=()=>setView(b.dataset.view));renderHead();renderPanel();requestDraw();}
 function renderTick(){renderStats();renderEvents();if((view!=='policies'||subview==='programs')&&view!=='settings'){const pos=$('panel').scrollTop;renderPanel();$('panel').scrollTop=pos;}else updateReformPreview();if($('mapmode').value!=='political'||S.nations.some(n=>n.war))requestDraw();}
 let returnFocus=null,wasPlaying=false;
 function modal(title,html){wasPlaying=playing;startPause(false);returnFocus=document.activeElement;$('modalContent').innerHTML='<h2 id="modalTitle">'+title+'</h2>'+html;$('overlay').hidden=false;$('closeModal').focus();}
 function closeModal(){$('overlay').hidden=true;returnFocus?.focus?.();if(wasPlaying)startPause(true);}
 function showGuide(){modal('The Sovereign field guide','<p>Lead any nation in an open-ended geopolitical sandbox. There is no single victory condition: pursue prosperity, liberty, influence, equality, or a balance of your own.</p><h3>Your first five minutes</h3><ol><li>Select a nation on the map or in the nation selector. Choose <b>Play as</b> to take control.</li><li>Open <b>Policies</b>. Adjust targets or stage an ideology preset, review its budget, and enact a reform.</li><li>Press <b>▶</b> to run time, or <b>▸|</b> to advance one month. Watch approval, inflation, debt and growth.</li><li>Open <b>Diplomacy</b> and select another nation to improve relations, negotiate trade or impose sanctions.</li><li>Use <b>Sandbox</b> to change conditions, enable infinite political capital, save or reset the world.</li></ol><h3>Realism and its limits</h3><p>This is a <b>2026 sandbox with approximate, hand-authored starting conditions</b>. Country values and institutional scores are scenario assumptions, not a current statistical database. The 52 featured nations use rounded scenario estimates. Other nations use historical Natural Earth population and GDP fields, mostly from 2019, without updating them to 2026; their remaining settings are generic defaults. Each nation’s overview shows its data basis. Simulation coefficients are stylized game assumptions, not forecasts. The embedded map includes 174 country and territory outlines. Canada is playable through its map marker and nation selector; its outline is not included. Antarctica is outside the simulation. Some small states are absent at this map resolution. Disputed boundaries are cartographic representations, not statements of recognition.</p><p>Economic policy, civil liberties and electoral safeguards are separate dimensions. Presets describe simplified policy tendencies; they do not label a country’s population. Actual governments mix different approaches. Reform targets take 6–30 months to move about two-thirds toward their target, while productive benefits take years.</p><h3>How the model works</h3><p>Every tick is one month. Taxes finance services, transfers, investment, defense, administration and interest. Deficits add to debt; inflation reduces its real value. Very high debt triggers restructuring. Growth responds gradually to capital, institutions, taxes, trade, real interest rates and shocks. Civil liberties have their own value and influence support. Elections can renew or replace a government, while you remain in control of the nation.</p><p>AI governments adjust taxes and rates every six months. Conflicts are abstract and resolve through attrition, reparations or ceasefire, with no instant territorial conquest. Initial alliances, wars, supply chains, currencies, ethnic groups and military inventories are not reconstructed. Central-bank control is a sandbox simplification, including for currency unions.</p><h3>Personal taxes and public housing</h3><p>In Policies → Taxation, choose simple taxation, a flat income tax, progressive marginal brackets, or custom effective rates for four income groups. Under progressive taxation, only income within each bracket receives its rate. The first bracket can be tax-free. Custom group rates apply to a group’s whole income and can represent non-progressive experiments.</p><p>Four representative incomes and population weights are illustrative, with personal income totaling 65% of GDP. Tax revenue uses the weighted bills, and the inequality model uses after-tax income plus targeted transfers. Other taxes and contributions are a separate GDP share, so income taxes are not counted twice. Rates phase in over six months; a tax-system switch begins next month.</p><p>Mass public housing spends a chosen GDP share on new homes, with a 24-month construction pipeline and diminishing construction efficiency. Existing stock has annual upkeep of 0.035% of GDP per percentage point of housing need served, plus 1.2% annual deterioration. These are game coefficients. Rent assistance is less effective when supply is tight; permitting reform expands private supply gradually. Public transport and childcare are additional budget lines with delayed benefits. Housing stock, pipeline and effective renter burden appear under Economy and Society.</p><p>Sandbox → Infinite political capital removes all political-capital limits for the player without storing infinity as a number. Public budgets, debt, reform lags and physical construction limits remain active. Existing browser saves and exported version 1 saves migrate automatically.</p><h3>Programs, urbanization and debt relief</h3><p>Policies → Programs includes these original packages plus governance, research, and household-security reforms: mass urbanization, mass public housing, debt relief, a human-capital drive and the energy transition. Opening one shows its live state, its own sliders and a one-click button that stages the whole package as a draft reform. Nothing is committed until you enact it, and everything inside a program is still an ordinary policy you can move by hand.</p><p>Urbanization models three things at once. City building puts serviced land into an 18-month pipeline; the industrial drive and the rural-development budget set how strongly people are pulled toward cities; and upgrading, public housing and transport determine how much of that arrival the city can absorb. Migration beyond absorption capacity becomes informal settlement, which raises rents and inequality and cancels out the productivity gain a larger city would otherwise give. All coefficients are gameplay assumptions, not estimates of any real country.</p><p>V4 debt rules are described at the top of this guide and in the Debt relief program. The legacy monthly forced-default loop has been replaced by a sustained-stress review and a protection period.</p><h3>Current policy patterns</h3><table><tr><th>Example</th><th>Why a single ideology label falls short</th></tr><tr><td>Germany · 2025</td><td>Private investment incentives coexist with infrastructure spending, housing measures and social policy.</td></tr><tr><td>UK · Budget 2025</td><td>Public-service investment and asset-income tax changes coexist with borrowing constraints.</td></tr><tr><td>China · 2026 plan</td><td>Industrial strategy coexists with market reforms and the energy transition. Official targets are intentions, not observed outcomes.</td></tr></table><h3>Sources checked September 2026</h3><ul><li><a target="_blank" rel="noopener noreferrer" href="https://www.sipri.org/publications/2026/sipri-fact-sheets/trends-world-military-expenditure-2025">SIPRI: military expenditure in 2025</a> — defense budgets and fiscal tradeoffs.</li><li><a target="_blank" rel="noopener noreferrer" href="https://www.imf.org/en/publications/fm/issues/2026/04/15/fiscal-monitor-april-2026">IMF Fiscal Monitor, April 2026</a> — debt pressure and interest costs.</li><li><a target="_blank" rel="noopener noreferrer" href="https://www.imf.org/en/publications/fm/issues/2025/10/07/fiscal-monitor-october-2025">IMF Fiscal Monitor, October 2025</a> — spending composition, efficiency and delayed benefits.</li><li><a target="_blank" rel="noopener noreferrer" href="https://www.ecb.europa.eu/mopo/intro/transmission/html/index.en.html">ECB: monetary-policy transmission</a> — rates affect demand and inflation with uncertain lags.</li><li><a target="_blank" rel="noopener noreferrer" href="https://www.v-dem.net/documents/75/V-Dem_Institute_Democracy_Report_2026_lowres.pdf">V-Dem Democracy Report 2026</a> — institutions, democracy and liberties are distinct dimensions.</li><li><a target="_blank" rel="noopener noreferrer" href="https://www.bundesregierung.de/breg-en/news/a-start-has-been-made-2379544">German government policy overview</a>; <a target="_blank" rel="noopener noreferrer" href="https://www.gov.uk/government/publications/budget-2025-document/budget-2025-html">UK Budget 2025</a>; <a target="_blank" rel="noopener noreferrer" href="https://english.www.gov.cn/news/202603/13/content_WS69b4b144c6d00ca5f9a09dfd.html">China’s 2026 Government Work Report</a>.</li><li><a target="_blank" rel="noopener noreferrer" href="https://www.naturalearthdata.com/downloads/110m-cultural-vectors/110m-admin-0-countries/">Natural Earth</a> — public-domain geographical reference.</li></ul><p>Sources inform qualitative mechanisms, not calibrated country scores or the numerical strength of policy effects.</p><h3>Tax and housing references</h3><ul><li><a target="_blank" rel="noopener noreferrer" href="https://www.irs.gov/filing/federal-income-tax-rates-and-brackets">IRS: how marginal income-tax brackets work</a>.</li><li><a target="_blank" rel="noopener noreferrer" href="https://www.oecd.org/content/dam/oecd/en/publications/reports/2017/12/income-redistribution-through-taxes-and-transfers-across-oecd-countries_2342ea51/bc7569c6-en.pdf">OECD research: redistribution through taxes and transfers</a>.</li><li><a target="_blank" rel="noopener noreferrer" href="https://www.oecd.org/en/publications/restoring-public-finances_fbcf9161-en/full-report/housing_ce593155.html">OECD: housing supply, maintenance and allowances</a>.</li></ul><h3>Performance</h3><p>A single self-contained file, with no runtime downloads or libraries. Map paths are cached; the map redraws only when needed. Simulation runs monthly and pauses background computation when the tab is hidden. Histories and event logs are bounded.</p>');}
-function save(){try{localStorage.setItem('sovereign-save-v1',JSON.stringify(S));toast('World saved to this browser.')}catch(e){toast('Browser storage unavailable. Use Export save file.')}}
+function save(){try{localStorage.setItem('sovereign-save-v1',JSON.stringify(S));toast(kingdomLabel('World saved to this browser.'))}catch(e){toast('Browser storage unavailable. Use Export save file.')}}
 function validSave(s){if(!s||s.version!==15||!Number.isInteger(s.month)||s.month<0||s.month>120000||!Number.isInteger(s.seed)||!Array.isArray(s.nations)||!s.nations.length||s.nations.length>320)throw Error('This is not a compatible Sovereign save.');const existing=new Set([...S.nations.map(n=>n.id),...Object.keys(CITY_CATALOG)]),seen=new Set();for(const n of s.nations){if(!existing.has(n.id)||seen.has(n.id))throw Error('Invalid nation list.');seen.add(n.id);for(const k of ['pop','gdp','debt','growth','inflation','capacity','capital','approval','stability','inequality','human','infra','clean','military','readiness','unemployment','election','shock','shockMonths','lon','lat','publicHousing','housingSupply','rentBurden','housingCompleted','urban','slums','urbanCapacity','urbanOpened','agglomeration','reliefCooldown','debtWarned'])if(!Number.isFinite(n[k])||Math.abs(n[k])>1e14)throw Error('Invalid nation data.');if(n.gdp<=0||n.debt<0||n.pop<=0)throw Error('Invalid economic values.');for(const k of ['policies','targets'])for(const x of POLICY)if(!Number.isFinite(n[k]?.[x.key])||n[k][x.key]<x.min-.001||n[k][x.key]>x.max+.001)throw Error('Invalid policies.');if(n.publicHousing<0||n.publicHousing>80||n.housingSupply<0||n.housingSupply>100||n.rentBurden<0||n.rentBurden>100||n.housingCompleted<0||n.housingCompleted>1||!Array.isArray(n.housingPipeline)||n.housingPipeline.length!==24||n.housingPipeline.some(v=>!Number.isFinite(v)||v<0||v>1))throw Error('Invalid housing data.');if(n.urban<0||n.urban>100||n.slums<0||n.slums>100||n.urbanCapacity<0||n.urbanCapacity>100||n.reliefCooldown<0||n.reliefCooldown>240||!Array.isArray(n.urbanPipeline)||n.urbanPipeline.length!==18||n.urbanPipeline.some(v=>!Number.isFinite(v)||v<0||v>5))throw Error('Invalid urbanization data.');for(const key of ['policies','targets']){const problem=taxProblem(n[key]);if(problem)throw Error(problem);}if(!Array.isArray(n.history)||n.history.length>120||n.history.some(v=>!Number.isFinite(v)||v<=0))throw Error('Invalid history.');if(!validNationMetaV8(n))throw Error('Nation metadata does not match this scenario.');if(n.war&&(!existing.has(n.war.target)||n.war.target===n.id||!Number.isFinite(n.war.months)||!Number.isFinite(n.war.progress)||n.war.months<0||n.war.months>30||Math.abs(n.war.progress)>100))throw Error('Invalid conflict.');}
 for(const n of s.nations)if(n.war&&s.nations.find(b=>b.id===n.war.target)?.war?.target!==n.id)throw Error('Conflicts must be reciprocal.');if(!existing.has(s.player)||!s.options||['ai','shocks','freeReforms','infiniteCapital','noDebt'].some(k=>typeof s.options[k]!=='boolean'))throw Error('Invalid game rules.');if(!s.relations||typeof s.relations!=='object'||Array.isArray(s.relations))throw Error('Invalid diplomacy.');for(const[k,v]of Object.entries(s.relations))if(!validPair(k,existing)||!Number.isFinite(v)||v< -100||v>100)throw Error('Invalid relations.');for(const k of ['treaties','sanctions'])if(!Array.isArray(s[k])||s[k].length>10000||s[k].some(p=>!validPair(p,existing)))throw Error('Invalid agreement.');if(!Array.isArray(s.events)||s.events.length>240||s.events.some(e=>!e||typeof e.title!=='string'||typeof e.body!=='string'||typeof e.tag!=='string'||e.title.length>200||e.body.length>2000||e.tag.length>30||!Number.isInteger(e.month)))throw Error('Invalid event log.');return s;}
 function validPair(p,ids){if(typeof p!=='string')return false;const a=p.split(':');return a.length===2&&a[0]!==a[1]&&a.every(id=>ids.has(id));}
@@ -473,7 +473,7 @@ function drawMap(){const t=transform();ctx.setTransform(dpr,0,0,dpr,0,0);ctx.cle
  if(!paths.length){ctx.fillStyle='#60787d';ctx.font=(12/t.scale)+'px sans-serif';ctx.textAlign='center';ctx.fillText('Strategic atlas · select a nation to begin',500,50);}
  // Markers keep small states and all seeded nations accessible, even at low detail.
  for(const n of S.nations){if(!SEEDS.some(r=>r[0]===n.id)&&n.id!==selected)continue;const[x,y]=project(n.lon,n.lat),important=n.id===S.player||n.id===selected;ctx.beginPath();ctx.arc(x,y,(important?4:2)/t.scale,0,Math.PI*2);ctx.fillStyle=important?'#efd498':'#a4b3b180';ctx.fill();if(important){ctx.beginPath();ctx.arc(x,y,8/t.scale,0,Math.PI*2);ctx.strokeStyle='#ddc08c80';ctx.lineWidth=1/t.scale;ctx.stroke();}}
- ctx.textAlign='center';for(const n of S.nations){const important=n.id===S.player||n.id===selected;if(!(important||n.gdp>labelFloorV7()||zoom>1.7&&n.gdp>350))continue;const[x,y]=project(n.lon,n.lat);ctx.font=(important?'600 ':'400 ')+(important?11:9)/t.scale+'px sans-serif';ctx.fillStyle=important?'#ffe5b4':'#b5c4c18c';ctx.fillText(n.name.toUpperCase()+(n.id==='CAN'&&showOceanLabelsV7()?' · MARKER ONLY':''),x,y+17/t.scale);}
+ ctx.textAlign='center';for(const n of S.nations){const important=n.id===S.player||n.id===selected;if(!(important||n.gdp>labelFloorV7()||zoom>1.7&&n.gdp>350))continue;const[x,y]=project(n.lon,n.lat);ctx.font=(important?'600 ':'400 ')+(important?11:9)/t.scale+'px sans-serif';ctx.fillStyle=important?'#ffe5b4':'#b5c4c18c';ctx.fillText(kingdomNationName(n).toUpperCase()+(n.id==='CAN'&&showOceanLabelsV7()?' · MARKER ONLY':''),x,y+17/t.scale);}
  ctx.font='italic '+12/t.scale+'px Georgia';ctx.fillStyle='#71888d70';if(showOceanLabelsV7())for(const[text,lon,lat]of [['PACIFIC OCEAN',-139,0],['ATLANTIC OCEAN',-35,20],['INDIAN OCEAN',78,-27]]){const[x,y]=project(lon,lat);ctx.fillText(text,x,y)}ctx.restore();}
 function hitMap(x,y){const t=transform(),mx=(x-t.x)/t.scale,my=(y-t.y)/t.scale;let closest=null,dist=Infinity;for(const n of S.nations){const[nx,ny]=project(n.lon,n.lat),d=Math.hypot(nx-mx,ny-my)*t.scale;if(d<9&&d<dist){closest=n.id;dist=d}}if(closest)return S.kingdom&&kingdomRegionAt(mx,my)?KINGDOM.id:closest;ctx.save();ctx.setTransform(1,0,0,1,0,0);for(let i=paths.length-1;i>=0;i--){const owner=territoryOwner(paths[i].id);if(nation(owner)&&ctx.isPointInPath(paths[i].path,mx,my,'evenodd')){ctx.restore();return owner}}ctx.restore();return null;}
 let drag=null;canvas.addEventListener('pointerdown',e=>{drag={x:e.clientX,y:e.clientY,px:panX,py:panY,moved:false};canvas.setPointerCapture(e.pointerId);$('tooltip').style.display='none'});canvas.addEventListener('pointermove',e=>{const r=canvas.getBoundingClientRect();if(drag){const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.hypot(dx,dy)>4)drag.moved=true;panX=drag.px+dx;panY=drag.py+dy;requestDraw();return}const id=hitMap(e.clientX-r.left,e.clientY-r.top);if(id!==hoverId){hoverId=id;requestDraw()}if(id){const n=nation(id);$('tooltip').innerHTML=escapeHTML(n.name)+'<small>'+money(n.gdp)+' output · '+n.stability.toFixed(0)+' stability</small>';$('tooltip').style.display='block';$('tooltip').style.left=clamp(e.clientX-r.left+14,5,mapW-215)+'px';$('tooltip').style.top=clamp(e.clientY-r.top+14,5,mapH-70)+'px';}else $('tooltip').style.display='none';});canvas.addEventListener('pointerup',e=>{if(drag&&!drag.moved){const r=canvas.getBoundingClientRect(),id=hitMap(e.clientX-r.left,e.clientY-r.top);if(id)selectMapNationKingdom(id,e.clientX-r.left,e.clientY-r.top)}drag=null});canvas.addEventListener('pointercancel',()=>drag=null);canvas.addEventListener('pointerleave',()=>{$('tooltip').style.display='none';hoverId=null;requestDraw()});canvas.addEventListener('wheel',e=>{e.preventDefault();const r=canvas.getBoundingClientRect(),x=e.clientX-r.left-mapW/2,y=e.clientY-r.top-mapH/2,old=zoom;zoom=clamp(zoom*Math.exp(-e.deltaY*.0015),.6,6);panX=x-(x-panX)*zoom/old;panY=y-(y-panY)*zoom/old;requestDraw()},{passive:false});
@@ -697,7 +697,7 @@ militaryPanel=function(n){return defenseControls(n)+v4MilitaryPanelV5(n);};
 const v4EconomyPanelV5=economyPanel;
 economyPanel=function(n){const b=fiscal(n);return '<div class="block"><h3>National accounts</h3><label class="eyebrow" for="outputMeasure">Display output as</label><select id="outputMeasure" class="full"><option value="gdp" '+(S.options.outputMeasure==='gdp'?'selected':'')+'>GDP · Gross Domestic Product</option><option value="nmp" '+(S.options.outputMeasure==='nmp'?'selected':'')+'>NMP · Net Material Product</option></select>'+metric('GDP · gross domestic product',money(n.gdp))+metric('NMP · modeled estimate',money(outputValue(n,'nmp')))+metric('Modeled material-production share',(n.accounting.materialShare*100).toFixed(1)+'% GDP')+metric('Depreciation of material output',n.accounting.depreciation.toFixed(1)+'%')+'<p>NMP here is material-sector value added minus material capital consumption. It excludes most nonmaterial services. This approximate historical measure is not simply GDP minus depreciation. Budgets and debt ratios always use GDP.</p></div><div class="block"><h3>Local government & new controls</h3>'+metric('Local operating spending',(n.cityOperating||0).toFixed(2)+'% GDP')+metric('Local tax supplements',b.v5Revenue.local.toFixed(2)+'% GDP')+metric('Corporate surcharge revenue',b.v5Revenue.corporate.toFixed(2)+'% GDP')+metric('Customs revenue',b.v5Revenue.customs.toFixed(2)+'% GDP')+'<button class="full" data-action="tradeView">Manage commodity trade →</button><button class="full" data-action="economyControls">Open economic controls →</button></div>'+v4EconomyPanelV5(n);};
 const v4RenderStatsV5=renderStats;
-renderStats=function(){v4RenderStatsV5();const n=player();$('stats').innerHTML=$('stats').innerHTML.replace('<label>National output</label>','<label>'+(S.options.outputMeasure==='nmp'?'NMP · modeled estimate':'GDP · national output')+'</label>').replace(money(n.gdp),money(outputValue(n)));};
+renderStats=function(){v4RenderStatsV5();const n=player();$('stats').innerHTML=$('stats').innerHTML.replace(''+'<label>'+kingdomLabel('National output')+'</label>'+'','<label>'+(S.options.outputMeasure==='nmp'?'NMP · modeled estimate':'GDP · national output')+'</label>').replace(money(n.gdp),money(outputValue(n)));};
 const v4UpdatePreviewV5=updateReformPreview;
 updateReformPreview=function(){v4UpdatePreviewV5();if($('defenseAllocation')&&draft){const total=draft.armyShare+draft.navyShare+draft.airShare;$('defenseAllocation').textContent='Allocation total: '+total.toFixed(0)+'%'+(militaryProblem(draft)?' · Must total 100%.':'');}};
 const v4PoliciesPanelV5=policiesPanel;
@@ -3860,7 +3860,10 @@ loadSave=function(text){
  try{
   parsed=JSON.parse(text);
   prepareCityCatalogV15();
-  if(parsed?.kingdom)registerKingdomCities();
+  if(parsed?.kingdom){
+   registerKingdomCities();
+   if(parsed.kingdom.industry===undefined)parsed.kingdom.industry=emptyRoyalIndustry();
+  }
   parsed=migrateSave(parsed);
   validSave(parsed);
  }catch(error){
@@ -3887,7 +3890,7 @@ loadSave=function(text){
  rebuildNeighboursV12();
  initPaths();
  render();
- toast('Saved world restored.');
+ toast(kingdomLabel('Saved world restored.'));
 };
 
 // Alternate 1990 scenario on the Sovereign world. Only the Crown enters the national tick.
@@ -4029,7 +4032,7 @@ function startKingdom(){
  S.nations=S.nations.filter(n=>!KINGDOM_REGION_IDS.has(n.id));
  S.nations.push(realm);
  S.kingdom={region:'SAU',government:'centralized-monarchy',capital:KINGDOM.capital,
-  treasury:{cash:0,last:null,transfers:[]}};
+  treasury:{cash:0,last:null,transfers:[]},industry:emptyRoyalIndustry()};
  S.startYear=1990;
  S.startMonth=0;
  S.options.historyEvents=false;
@@ -4057,6 +4060,7 @@ function startKingdom(){
 const originalSaveValidatorKingdom=validSave;
 validSave=function(s){
  if(s?.kingdom){
+  validateRoyalIndustry(s.kingdom.industry,s.month);
   const hasInternalPartner=key=>key.split(':').some(id=>KINGDOM_REGION_IDS.has(id));
   if(Object.keys(s.relations??{}).some(hasInternalPartner)){
    throw Error('لا تُسجّل علاقات دبلوماسية مع أقاليم المملكة.');
@@ -4254,6 +4258,243 @@ bindPanel=function(){
    toast('سُجّل أمر التحويل الملكي.');
   };
  }
+};
+
+// Fictional scenario calibration. Mass is in kilotonnes, electricity in GWh,
+// employment in workers and cash in constant USD billions.
+const INDUSTRIAL_GOODS = {
+ oil:['النفط الخام',.00022,180], gas:['الغاز الطبيعي',.00015,140],
+ ore:['خام الحديد',.00008,160], fuel:['المشتقات النفطية',.00064,190],
+ steel:['الفولاذ',.00075,160]
+};
+const INDUSTRIAL_MINISTRIES = {energy:'وزارة الطاقة',mining:'وزارة المعادن',industry:'وزارة الصناعة'};
+const INDUSTRIAL_SITES = {
+ oil:{label:'حقل نفطي',ministry:'energy',good:'oil',output:140,power:0,workers:1200,capital:.12,cost:.012,months:3,
+  deposits:{SAU:20000,IRQ:14000,ARE:10000,IRN:12000}},
+ gas:{label:'حقل غاز',ministry:'energy',good:'gas',output:130,power:0,workers:900,capital:.1,cost:.009,months:3,
+  deposits:{QAT:20000,IRN:16000,ARE:9000,OMN:7000}},
+ mine:{label:'منجم حديد',ministry:'mining',good:'ore',output:125,power:0,workers:1500,capital:.075,cost:.005,months:3,
+  deposits:{MRT:16000,IND:18000,IRN:10000}},
+ power:{label:'محطة كهرباء غازية',ministry:'energy',output:420,input:['gas',70],power:0,workers:650,capital:.15,cost:.009,months:4},
+ refinery:{label:'مصفاة نفط',ministry:'energy',good:'fuel',output:108,input:['oil',120],power:135,workers:950,capital:.18,cost:.013,months:4},
+ steel:{label:'مصنع فولاذ',ministry:'industry',good:'steel',output:74,input:['ore',110],power:210,workers:1800,capital:.21,cost:.015,months:5}
+};
+const INDUSTRY_ORDER = Object.keys(INDUSTRIAL_SITES);
+
+function emptyRoyalIndustry(){
+ return {
+  stock:Object.fromEntries(Object.keys(INDUSTRIAL_GOODS).map(key=>[key,0])),
+  reserves:Object.fromEntries(INDUSTRY_ORDER.filter(key=>INDUSTRIAL_SITES[key].deposits)
+   .map(key=>[key,{...INDUSTRIAL_SITES[key].deposits}])),
+  facilities:[],last:null
+ };
+}
+
+function approveRoyalFacility(type,region){
+ const spec=Object.hasOwn(INDUSTRIAL_SITES,type)?INDUSTRIAL_SITES[type]:null;
+ if(S.player!==KINGDOM.id||!S.kingdom||!spec||!KINGDOM_REGION_IDS.has(region)||
+   (spec.deposits&&!Object.hasOwn(spec.deposits,region)))return false;
+ const industry=S.kingdom.industry,treasury=S.kingdom.treasury;
+ if(industry.facilities.length>=60||treasury.cash<spec.capital||
+   industry.facilities.some(site=>site.type===type&&site.region===region))return false;
+ treasury.cash-=spec.capital;
+ industry.facilities.push({type,region,ordered:S.month,ready:S.month+spec.months});
+ addEvent('اعتماد مشروع صناعي',INDUSTRIAL_MINISTRIES[spec.ministry]+' · '+spec.label,'economy');
+ return true;
+}
+
+function settleRoyalIndustry(){
+ const realm=nation(KINGDOM.id),{industry,treasury}=S.kingdom;
+ const workers=Object.fromEntries(realm.regions.map(region=>[
+  region.id,realm.pop*region.populationWeight*1e6*realm.participation*(1-realm.unemployment/100)*.01
+ ]));
+ let power=0,spent=0,revenue=0,generated=0;
+ const runs=[];
+ for(const type of INDUSTRY_ORDER){
+  const spec=INDUSTRIAL_SITES[type];
+  for(const site of industry.facilities){
+   if(site.type!==type||site.ready>S.month)continue;
+   const [input,quantity]=spec.input??[];
+   const reserve=industry.reserves[type];
+   let utilization=Math.min(1,workers[site.region]/spec.workers,treasury.cash/spec.cost);
+   if(!Number.isFinite(utilization))utilization=0;
+   if(input)utilization=Math.min(utilization,industry.stock[input]/quantity);
+   if(spec.power)utilization=Math.min(utilization,power/spec.power);
+   if(reserve)utilization=Math.min(utilization,reserve[site.region]/spec.output);
+   const output=spec.output*utilization;
+   if(input)industry.stock[input]=Math.max(0,industry.stock[input]-quantity*utilization);
+   if(reserve)reserve[site.region]=Math.max(0,reserve[site.region]-output);
+   power=Math.max(0,power-spec.power*utilization);
+   if(type==='power'){power+=output;generated+=output;}
+   else industry.stock[spec.good]+=output;
+   workers[site.region]-=utilization*spec.workers;
+   const cost=spec.cost*utilization;
+   treasury.cash=Math.max(0,treasury.cash-cost);
+   spent+=cost;
+   runs.push({type,region:site.region,output,cost,workers:utilization*spec.workers});
+  }
+ }
+ const sales={};
+ for(const [good,[,price,demand]] of Object.entries(INDUSTRIAL_GOODS)){
+  // Reserve feedstock for existing and commissioned downstream plants.
+  const reserved=industry.facilities.reduce((sum,site)=>{
+   const input=INDUSTRIAL_SITES[site.type].input;
+   return sum+(input?.[0]===good?input[1]:0);
+  },0);
+  const surplus=Math.max(0,industry.stock[good]-reserved);
+  const quantity=Math.min(demand,surplus);
+  const value=quantity*price*(1-.25*quantity/demand);
+  industry.stock[good]-=quantity;
+  revenue+=value;
+  sales[good]={quantity,value};
+ }
+ treasury.cash+=revenue;
+ industry.last={month:S.month,runs,sales,generated,powerUsed:generated-power,spent,revenue};
+}
+
+const originalRoyalIndustryTick=tickHistoryV12;
+tickHistoryV12=function(){
+ originalRoyalIndustryTick();
+ if(S.kingdom?.industry.facilities.length)settleRoyalIndustry();
+};
+
+function validateRoyalIndustry(industry,month){
+ const amount=n=>Number.isFinite(n)&&n>=0;
+ if(!industry||!Array.isArray(industry.facilities)||industry.facilities.length>60||
+   Object.keys(INDUSTRIAL_GOODS).some(key=>!amount(industry.stock?.[key])))throw Error('مخزون صناعي غير صالح.');
+ const seen=new Set();
+ for(const site of industry.facilities){
+  if(!site||!Object.hasOwn(INDUSTRIAL_SITES,site.type))throw Error('منشأة غير معروفة.');
+  const spec=INDUSTRIAL_SITES[site.type],key=site.type+':'+site.region;
+  if(!KINGDOM_REGION_IDS.has(site.region)||seen.has(key)||
+   !Number.isInteger(site.ordered)||site.ordered<0||site.ordered>month||site.ready!==site.ordered+spec.months||
+   (spec.deposits&&!Object.hasOwn(spec.deposits,site.region)))throw Error('أمر إنشاء غير صالح.');
+  seen.add(key);
+ }
+ for(const [type,spec] of Object.entries(INDUSTRIAL_SITES)){
+  for(const [region,initial] of Object.entries(spec.deposits??{})){
+   const remaining=industry.reserves?.[type]?.[region];
+   if(!amount(remaining)||remaining>initial)throw Error('احتياطي تعدين أو طاقة غير صالح.');
+  }
+ }
+ const l=industry.last;
+ if(l===null)return;
+ if(!l||!Number.isInteger(l.month)||l.month<1||l.month>month||
+  !['spent','revenue','generated','powerUsed'].every(key=>amount(l[key]))||l.powerUsed>l.generated||
+  !Array.isArray(l.runs)||l.runs.length>industry.facilities.length||
+  l.runs.some(r=>!r||!seen.has(r.type+':'+r.region)||!['output','cost','workers'].every(key=>amount(r[key])))||
+  Object.keys(INDUSTRIAL_GOODS).some(key=>!amount(l.sales?.[key]?.quantity)||!amount(l.sales[key].value))){
+  throw Error('تقرير الإنتاج غير صالح.');
+ }
+}
+
+const priorIndustrialEconomy=economyPanel;
+economyPanel=function(n){
+ const base=priorIndustrialEconomy(n);
+ if(n.id!==KINGDOM.id)return base;
+ const {industry,region}=S.kingdom,last=industry.last;
+ const options=INDUSTRY_ORDER.filter(type=>!INDUSTRIAL_SITES[type].deposits||
+  Object.hasOwn(INDUSTRIAL_SITES[type].deposits,region));
+ const market=Object.entries(INDUSTRIAL_GOODS).map(([key,[label]])=>{
+  const sale=last?.sales[key];
+  const stock=metric('مخزون '+label,KINGDOM_NUMBER.format(industry.stock[key])+' ألف طن');
+  if(!sale?.quantity)return stock;
+  return stock+metric('مبيعات '+label,KINGDOM_NUMBER.format(sale.quantity)+' ألف طن')
+   +metric('سعر بيع '+label,KINGDOM_NUMBER.format(sale.value/sale.quantity*1e6)+' دولار للطن');
+ }).join('');
+ const reserves=Object.entries(INDUSTRIAL_SITES).filter(([,spec])=>
+  spec.deposits&&Object.hasOwn(spec.deposits,region))
+  .map(([type,spec])=>metric('احتياطي '+INDUSTRIAL_GOODS[spec.good][0],
+   KINGDOM_NUMBER.format(industry.reserves[type][region])+' ألف طن')).join('');
+ const facilities=industry.facilities.map(site=>{
+  const run=last?.runs.find(r=>r.type===site.type&&r.region===site.region);
+  const unit=site.type==='power'?' غيغاواط ساعة':' ألف طن';
+  return metric(INDUSTRIAL_SITES[site.type].label+' · '+n.regions.find(r=>r.id===site.region).name,
+   site.ready>S.month?'قيد الإنشاء':run?'الإنتاج '+KINGDOM_NUMBER.format(run.output)+unit:'بانتظار أول دورة تشغيل');
+ }).join('');
+ return '<section class="block" dir="rtl" lang="ar"><h3>الشركة الملكية للإنتاج</h3>'
+  +metric('الإقليم المختار',n.regions.find(r=>r.id===region).name)
+  +(S.player===n.id?'<label for="royalFacility">اعتماد منشأة في الإقليم</label><select id="royalFacility" class="full">'
+   +options.map(type=>{
+    const spec=INDUSTRIAL_SITES[type];
+    return '<option value="'+type+'">'+spec.label+' · '+INDUSTRIAL_MINISTRIES[spec.ministry]+' · '+kingdomMoney(spec.capital)+'</option>';
+   }).join('')+'</select><button id="royalApproveFacility" class="full">اعتماد وتمويل المشروع</button>':'')
+  +facilities+reserves+market
+  +(last?metric('الكهرباء المنتجة',KINGDOM_NUMBER.format(last.generated)+' غيغاواط ساعة')
+   +metric('الكهرباء المستهلكة',KINGDOM_NUMBER.format(last.powerUsed)+' غيغاواط ساعة')
+   +metric('مبيعات الشهر',kingdomMoney(last.revenue))+metric('تشغيل الشهر',kingdomMoney(last.spent))
+   +metric('صافي التدفق التشغيلي',kingdomMoney(last.revenue-last.spent)):'')+'</section>'+base;
+};
+
+const priorIndustryBindings=bindPanel;
+bindPanel=function(){
+ priorIndustryBindings();
+ if(current()?.id!==KINGDOM.id||view!=='economy')return;
+ const button=$('panel').querySelector('#royalApproveFacility');
+ if(button)button.onclick=()=>{
+  if(approveRoyalFacility($('royalFacility').value,S.kingdom.region)){
+   renderPanel();
+   toast('اعتمد المشروع وخُصمت تكلفة الإنشاء.');
+  }else toast('تعذّر الاعتماد. تحقّق من الرصيد والإقليم والمشاريع القائمة.');
+ };
+};
+
+const KINGDOM_UI={
+ Overview:'نظرة عامة',Cities:'المدن',Parties:'الحكم',Policies:'السياسات',Agencies:'الهيئات',
+ Economy:'الاقتصاد',Growth:'النمو','Central bank':'البنك المركزي',Trade:'التجارة',
+ Diplomacy:'الدبلوماسية',Military:'الدفاع',Dispatch:'الأحداث',Sandbox:'الإعدادات',Guide:'الدليل',
+ 'Pause simulation':'إيقاف المحاكاة','Play simulation':'تشغيل المحاكاة',
+ 'Simulation running':'المحاكاة تعمل','Simulation paused':'المحاكاة متوقفة',
+ 'National output':'الناتج الوطني',Population:'السكان','Public approval':'التأييد الشعبي',
+ 'Political capital':'رأس المال السياسي',Supportive:'مؤيد',Contested:'متباين',Unlimited:'غير محدود',
+ Reforms:'الإصلاحات',Programs:'البرامج',Taxation:'الضرائب',Ideologies:'التوجهات',Society:'المجتمع',
+ 'Select nation':'اختيار الدولة','Your nation':'دولتك','Nation intelligence':'ملف الدولة','Playing as ':'تلعب باسم ',
+ 'Time is advancing':'الزمن يتقدم','Time is paused':'الزمن متوقف',
+ 'World saved to this browser.':'حُفظ العالم في هذا المتصفح.',
+ 'Saved world restored.':'استُعيد العالم المحفوظ.'
+};
+
+function kingdomLabel(text){
+ return S?.kingdom?(KINGDOM_UI[text]??text):text;
+}
+
+const KINGDOM_COUNTRY_NAMES=new Intl.DisplayNames(['ar'],{type:'region',fallback:'none'});
+function kingdomNationName(n){
+ const code=CITY_CATALOG[n.id]?.iso2;
+ return S?.kingdom&&/^[a-z]{2}$/i.test(code??'')?
+  KINGDOM_COUNTRY_NAMES.of(code.toUpperCase())??n.name:n.name;
+}
+
+const KINGDOM_SHELL_TEXT=[
+ ['.brand strong','SOVEREIGN',KINGDOM.name],['.brand .eyebrow','Political sandbox · V15','محاكاة سياسية'],
+ ['.maptop h1','A world of possibilities.','خريطة العالم'],
+ ['#mapmode option[value="political"]','Political control','السيطرة السياسية'],
+ ['#mapmode option[value="ideology"]','Economic ideology','التوجه الاقتصادي'],
+ ['#mapmode option[value="prosperity"]','Prosperity','الازدهار'],
+ ['#mapmode option[value="stability"]','Stability','الاستقرار'],
+ ['#saveTop','Save','حفظ'],['#allEvents','View all ↗','عرض الأحداث']
+];
+const KINGDOM_SHELL_ARIA=[
+ ['step','Advance one month','تقديم شهر واحد'],['helpTop','How to play','طريقة اللعب'],
+ ['closeModal','Close dialog','إغلاق الحوار'],['navigation','Game views','أقسام اللعبة'],
+ ['mapmode','Map layer','طبقة الخريطة'],['zoomIn','Zoom in','تكبير'],
+ ['zoomOut','Zoom out','تصغير'],['zoomReset','Reset map','إعادة ضبط الخريطة']
+];
+
+const priorLocalizedRender=render;
+render=function(){
+ if(document.documentElement){
+  document.documentElement.lang=S.kingdom?'ar':'en';
+  document.documentElement.dir=S.kingdom?'rtl':'ltr';
+ }
+ const status=playing?'Simulation running':'Simulation paused';
+ $('runstatus').textContent=kingdomLabel(status);
+ priorLocalizedRender();
+ for(const [selector,en,ar] of KINGDOM_SHELL_TEXT){
+  const element=document.querySelector?.(selector);
+  if(element)element.textContent=S.kingdom?ar:en;
+ }
+ for(const [id,en,ar] of KINGDOM_SHELL_ARIA)$(id)?.setAttribute('aria-label',S.kingdom?ar:en);
 };
 
 newGame();initPaths();render();installMobileMap();startScreen();new ResizeObserver(resizeMap).observe(canvas);resizeMap();
