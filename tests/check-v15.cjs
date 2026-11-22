@@ -186,6 +186,16 @@ run('renderTick=()=>{}');
   }
   return Object.keys(stock).every(good=>Math.abs(balances[good]-last.sales[good].quantity-stock[good])<1e-8);
  })()`),'inventories reconcile with production, consumption and sales');
+ fresh.run("S.kingdom.industry.reserves.oil.SAU=1;$('step').onclick()");
+ assert(fresh.run("S.kingdom.industry.reserves.oil.SAU===0&&S.kingdom.industry.last.runs.find(site=>site.type==='oil').output===1"),
+  'the final extraction cannot exceed the remaining reserve');
+ fresh.run("$('step').onclick()");
+ assert.equal(fresh.run("S.kingdom.industry.last.runs.find(site=>site.type==='oil').output"),0);
+ fresh.run("while(S.month<120)$('step').onclick()");
+ assert(fresh.run(`S.month===120&&player().fund===0&&
+  Object.values(S.kingdom.industry.stock).every(stock=>Number.isFinite(stock)&&stock>=0)`),
+  'industry survives a decade with depleted resources without crediting the sovereign fund');
+ fresh.run("validSave(JSON.parse(JSON.stringify(S)))");
  assert.throws(()=>fresh.run("let malformed=JSON.parse(checkpoint);malformed.kingdom.industry.stock.oil=-1;loadSave(JSON.stringify(malformed))"));
  fresh.run("let legacy=JSON.parse(checkpoint);delete legacy.kingdom.industry;loadSave(JSON.stringify(legacy))");
  assert.equal(fresh.run('S.kingdom.industry.facilities.length'),0,'old kingdom saves gain an empty industry');
