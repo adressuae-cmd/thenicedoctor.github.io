@@ -3,37 +3,49 @@
 const INDUSTRIAL_GOODS = {
  oil:['النفط الخام',.00022,180], gas:['الغاز الطبيعي',.00015,140],
  ore:['خام الحديد',.00008,160], fuel:['المشتقات النفطية',.00064,190],
+ copper:['خام النحاس',.00019,125], bauxite:['البوكسيت',.00009,125],
+ phosphate:['الفوسفات',.00012,125], gold:['خام الذهب',.00023,90],
  steel:['الفولاذ',.00075,160]
 };
 const INDUSTRIAL_MINISTRIES = {energy:'وزارة الطاقة',mining:'وزارة المعادن',industry:'وزارة الصناعة'};
 const INDUSTRIAL_SITES = {
- oil:{label:'حقل نفطي',ministry:'energy',good:'oil',output:140,power:0,workers:1200,capital:.12,cost:.012,months:3,
-  deposits:{SAU:20000,IRQ:14000,ARE:10000,IRN:12000}},
- gas:{label:'حقل غاز',ministry:'energy',good:'gas',output:130,power:0,workers:900,capital:.1,cost:.009,months:3,
-  deposits:{QAT:20000,IRN:16000,ARE:9000,OMN:7000}},
- mine:{label:'منجم حديد',ministry:'mining',good:'ore',output:125,power:0,workers:1500,capital:.075,cost:.005,months:3,
-  deposits:{MRT:16000,IND:18000,IRN:10000}},
+ oil:{label:'حقل نفطي',ministry:'energy',good:'oil',output:140,power:0,workers:1200,capital:.12,cost:.012,months:3,extraction:true},
+ gas:{label:'حقل غاز',ministry:'energy',good:'gas',output:130,power:0,workers:900,capital:.1,cost:.009,months:3,extraction:true},
+ mine:{label:'منجم حديد',ministry:'mining',good:'ore',output:125,power:0,workers:1500,capital:.075,cost:.005,months:3,extraction:true},
+ copper:{label:'منجم نحاس',ministry:'mining',good:'copper',output:95,power:0,workers:1250,capital:.09,cost:.007,months:3,extraction:true},
+ bauxite:{label:'منجم بوكسيت',ministry:'mining',good:'bauxite',output:115,power:0,workers:1000,capital:.075,cost:.005,months:3,extraction:true},
+ phosphate:{label:'منجم فوسفات',ministry:'mining',good:'phosphate',output:110,power:0,workers:1100,capital:.08,cost:.006,months:3,extraction:true},
+ gold:{label:'منجم ذهب',ministry:'mining',good:'gold',output:55,power:0,workers:1400,capital:.11,cost:.009,months:4,extraction:true},
  power:{label:'محطة كهرباء غازية',ministry:'energy',output:420,input:['gas',70],power:0,workers:650,capital:.15,cost:.009,months:4},
  refinery:{label:'مصفاة نفط',ministry:'energy',good:'fuel',output:108,input:['oil',120],power:135,workers:950,capital:.18,cost:.013,months:4},
  steel:{label:'مصنع فولاذ',ministry:'industry',good:'steel',output:74,input:['ore',110],power:210,workers:1800,capital:.21,cost:.015,months:5}
 };
 const INDUSTRY_ORDER = Object.keys(INDUSTRIAL_SITES);
+const MAX_ROYAL_FACILITIES = INDUSTRY_ORDER.length*KINGDOM_REGION_IDS.size;
 
 function emptyRoyalIndustry(){
  return {
   stock:Object.fromEntries(Object.keys(INDUSTRIAL_GOODS).map(key=>[key,0])),
-  reserves:Object.fromEntries(INDUSTRY_ORDER.filter(key=>INDUSTRIAL_SITES[key].deposits)
-   .map(key=>[key,{...INDUSTRIAL_SITES[key].deposits}])),
   facilities:[],last:null
  };
 }
 
+function migrateRoyalIndustry(industry){
+ if(industry===undefined)return emptyRoyalIndustry();
+ if(!industry||!Object.hasOwn(industry,'reserves'))return industry;
+ delete industry.reserves;
+ for(const good of ['copper','bauxite','phosphate','gold']){
+  industry.stock[good]=0;
+  if(industry.last!==null)industry.last.sales[good]={quantity:0,value:0};
+ }
+ return industry;
+}
+
 function approveRoyalFacility(type,region){
  const spec=Object.hasOwn(INDUSTRIAL_SITES,type)?INDUSTRIAL_SITES[type]:null;
- if(S.player!==KINGDOM.id||!S.kingdom||!spec||!KINGDOM_REGION_IDS.has(region)||
-   (spec.deposits&&!Object.hasOwn(spec.deposits,region)))return false;
+ if(S.player!==KINGDOM.id||!S.kingdom||!spec||!KINGDOM_REGION_IDS.has(region))return false;
  const industry=S.kingdom.industry,treasury=S.kingdom.treasury;
- if(industry.facilities.length>=60||treasury.cash<spec.capital||
+ if(industry.facilities.length>=MAX_ROYAL_FACILITIES||treasury.cash<spec.capital||
    industry.facilities.some(site=>site.type===type&&site.region===region))return false;
  treasury.cash-=spec.capital;
  industry.facilities.push({type,region,ordered:S.month,ready:S.month+spec.months});
@@ -53,15 +65,12 @@ function settleRoyalIndustry(){
   for(const site of industry.facilities){
    if(site.type!==type||site.ready>S.month)continue;
    const [input,quantity]=spec.input??[];
-   const reserve=industry.reserves[type];
    let utilization=Math.min(1,workers[site.region]/spec.workers,treasury.cash/spec.cost);
    if(!Number.isFinite(utilization))utilization=0;
    if(input)utilization=Math.min(utilization,industry.stock[input]/quantity);
    if(spec.power)utilization=Math.min(utilization,power/spec.power);
-   if(reserve)utilization=Math.min(utilization,reserve[site.region]/spec.output);
    const output=spec.output*utilization;
    if(input)industry.stock[input]=Math.max(0,industry.stock[input]-quantity*utilization);
-   if(reserve)reserve[site.region]=Math.max(0,reserve[site.region]-output);
    power=Math.max(0,power-spec.power*utilization);
    if(type==='power'){power+=output;generated+=output;}
    else industry.stock[spec.good]+=output;
@@ -98,22 +107,15 @@ tickHistoryV12=function(){
 
 function validateRoyalIndustry(industry,month){
  const amount=n=>Number.isFinite(n)&&n>=0;
- if(!industry||!Array.isArray(industry.facilities)||industry.facilities.length>60||
+ if(!industry||!Array.isArray(industry.facilities)||industry.facilities.length>MAX_ROYAL_FACILITIES||
    Object.keys(INDUSTRIAL_GOODS).some(key=>!amount(industry.stock?.[key])))throw Error('مخزون صناعي غير صالح.');
  const seen=new Set();
  for(const site of industry.facilities){
   if(!site||!Object.hasOwn(INDUSTRIAL_SITES,site.type))throw Error('منشأة غير معروفة.');
   const spec=INDUSTRIAL_SITES[site.type],key=site.type+':'+site.region;
   if(!KINGDOM_REGION_IDS.has(site.region)||seen.has(key)||
-   !Number.isInteger(site.ordered)||site.ordered<0||site.ordered>month||site.ready!==site.ordered+spec.months||
-   (spec.deposits&&!Object.hasOwn(spec.deposits,site.region)))throw Error('أمر إنشاء غير صالح.');
+   !Number.isInteger(site.ordered)||site.ordered<0||site.ordered>month||site.ready!==site.ordered+spec.months)throw Error('أمر إنشاء غير صالح.');
   seen.add(key);
- }
- for(const [type,spec] of Object.entries(INDUSTRIAL_SITES)){
-  for(const [region,initial] of Object.entries(spec.deposits??{})){
-   const remaining=industry.reserves?.[type]?.[region];
-   if(!amount(remaining)||remaining>initial)throw Error('احتياطي تعدين أو طاقة غير صالح.');
-  }
  }
  const l=industry.last;
  if(l===null)return;
@@ -131,8 +133,6 @@ economyPanel=function(n){
  const base=priorIndustrialEconomy(n);
  if(n.id!==KINGDOM.id)return base;
  const {industry,region}=S.kingdom,last=industry.last;
- const options=INDUSTRY_ORDER.filter(type=>!INDUSTRIAL_SITES[type].deposits||
-  Object.hasOwn(INDUSTRIAL_SITES[type].deposits,region));
  const market=Object.entries(INDUSTRIAL_GOODS).map(([key,[label]])=>{
   const sale=last?.sales[key];
   const stock=metric('مخزون '+label,KINGDOM_NUMBER.format(industry.stock[key])+' ألف طن');
@@ -140,10 +140,8 @@ economyPanel=function(n){
   return stock+metric('مبيعات '+label,KINGDOM_NUMBER.format(sale.quantity)+' ألف طن')
    +metric('سعر بيع '+label,KINGDOM_NUMBER.format(sale.value/sale.quantity*1e6)+' دولار للطن');
  }).join('');
- const reserves=Object.entries(INDUSTRIAL_SITES).filter(([,spec])=>
-  spec.deposits&&Object.hasOwn(spec.deposits,region))
-  .map(([type,spec])=>metric('احتياطي '+INDUSTRIAL_GOODS[spec.good][0],
-   KINGDOM_NUMBER.format(industry.reserves[type][region])+' ألف طن')).join('');
+ const reserves=Object.values(INDUSTRIAL_SITES).filter(spec=>spec.extraction)
+  .map(spec=>metric('احتياطي '+INDUSTRIAL_GOODS[spec.good][0],'غير محدود')).join('');
  const facilities=industry.facilities.map(site=>{
   const run=last?.runs.find(r=>r.type===site.type&&r.region===site.region);
   const unit=site.type==='power'?' غيغاواط ساعة':' ألف طن';
@@ -153,7 +151,7 @@ economyPanel=function(n){
  return '<section class="block" dir="rtl" lang="ar"><h3>الشركة الملكية للإنتاج</h3>'
   +metric('الإقليم المختار',n.regions.find(r=>r.id===region).name)
   +(S.player===n.id?'<label for="royalFacility">اعتماد منشأة في الإقليم</label><select id="royalFacility" class="full">'
-   +options.map(type=>{
+   +INDUSTRY_ORDER.map(type=>{
     const spec=INDUSTRIAL_SITES[type];
     return '<option value="'+type+'">'+spec.label+' · '+INDUSTRIAL_MINISTRIES[spec.ministry]+' · '+kingdomMoney(spec.capital)+'</option>';
    }).join('')+'</select><button id="royalApproveFacility" class="full">اعتماد وتمويل المشروع</button>':'')

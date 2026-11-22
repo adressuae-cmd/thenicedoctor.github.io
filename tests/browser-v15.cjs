@@ -75,7 +75,9 @@ async function main() {
     const kingdom = await browser.newPage();
     kingdom.on('pageerror', error => errors.push(error.message));
     await kingdom.goto(url);
+    await kingdom.locator('#kingdomStartMonth').fill('2005-07');
     await kingdom.locator('#startKingdom').click();
+    assert.equal(await kingdom.evaluate(() => gameDate(0).toISOString()), '2005-07-01T00:00:00.000Z');
     assert.equal(await kingdom.evaluate(() => S.player), 'UHK');
     assert.equal(await kingdom.locator('#royalRegion option').count(), 28);
     const mapped = await kingdom.evaluate(() => {
@@ -117,9 +119,10 @@ async function main() {
     assert.deepEqual(savedFinances, { fund: opening / 2, cash: opening / 2, orders: 1 });
     assert.equal(await kingdom.locator('html').getAttribute('dir'), 'rtl');
     assert.equal(await kingdom.locator('[data-view="economy"] .navlabel').innerText(), 'الاقتصاد');
-    await kingdom.locator('#royalFacility').selectOption('refinery');
+    assert.equal(await kingdom.getByText('غير محدود', {exact:true}).count(), 7);
+    await kingdom.locator('#royalFacility').selectOption('oil');
     await kingdom.locator('#royalApproveFacility').click();
-    assert(await kingdom.evaluate(() => S.kingdom.industry.facilities.some(x=>x.type==='refinery'&&x.region==='PSE')));
+    assert(await kingdom.evaluate(() => S.kingdom.industry.facilities.some(x=>x.type==='oil'&&x.region==='PSE')));
     await kingdom.locator('#saveTop').click();
     await kingdom.reload();
     await kingdom.locator('#startLoad2').click();
@@ -127,7 +130,7 @@ async function main() {
     assert.equal(await kingdom.evaluate(() => player().fund), savedFinances.fund);
     assert.equal(await kingdom.evaluate(() => S.kingdom.industry.facilities.length), 1);
     assert(await kingdom.evaluate(() => player().cities.find(city => city.id === 'PSE-0').queue.length === 1));
-    assert.deepEqual(await advanceToDecade(kingdom), { month: 120, year: 2000, finiteOutput: true });
+    assert.deepEqual(await advanceToDecade(kingdom), { month: 120, year: 2015, finiteOutput: true });
     await kingdom.locator('#saveTop').click();
     await kingdom.reload();
     await kingdom.locator('#startLoad2').click();

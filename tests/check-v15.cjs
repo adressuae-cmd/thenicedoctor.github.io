@@ -80,7 +80,7 @@ run('renderTick=()=>{}');
    [key,regions.reduce((sum,n)=>sum+n[key],0)]));
  })()`);
  const cityIds=runKingdom('KINGDOM_REGIONS.flatMap(([id])=>nation(id).cities.map(c=>c.id))');
- runKingdom("startScreen();$('startKingdom').onclick()");
+ runKingdom("startScreen();$('kingdomStartMonth').value='1990-01';$('startKingdom').onclick()");
  assert.equal(runKingdom('S.player'),'UHK');
  assert.equal(runKingdom('gameDate(0).toISOString()'),'1990-01-01T00:00:00.000Z');
  assert.equal(runKingdom('player().regions.length'),28);
@@ -102,7 +102,7 @@ run('renderTick=()=>{}');
  assert(runKingdom('S.kingdom.treasury.last.borrowing>0&&S.kingdom.treasury.last.unfunded===0'));
  runKingdom("S.options.debtPaused=true;$('step').onclick()");
  assert(runKingdom('S.kingdom.treasury.last.borrowing===0&&S.kingdom.treasury.last.interest===0'));
- runKingdom("validSave(JSON.parse(JSON.stringify(S)));startKingdom()");
+ runKingdom("validSave(JSON.parse(JSON.stringify(S)));startKingdom(1990,0)");
 
  runKingdom(`
   S.options.freeReforms=true;S.options.fastReforms=true;
@@ -146,25 +146,28 @@ run('renderTick=()=>{}');
 // Industrial orders preserve construction, material balances and treasury cash.
 {
  const game=makeGame('build/v15.html'),r=game.run;
- r("startKingdom()");
+ r("startKingdom(1985,3)");
+ assert.equal(r('gameDate(0).toISOString()'),'1985-04-01T00:00:00.000Z');
+ assert.equal(r("startKingdom(1799,0)"),false);
+ assert.equal(r('player().regions.length'),28);
  assert.equal(r("approveRoyalFacility('oil','SAU')"),false,'construction requires treasury cash');
  r(`S.options.freeReforms=true;S.options.fastReforms=true;
   enact({...player().targets,taxMode:'simple',tax:55});$('step').onclick();`);
- assert.equal(r("approveRoyalFacility('oil','JOR')"),false,'extraction requires a regional deposit');
+ assert.equal(r("approveRoyalFacility('oil','BRA')"),false,'construction is restricted to the kingdom');
  r("window.cashBefore=S.kingdom.treasury.cash");
  assert.equal(r("approveRoyalFacility('refinery','SAU')"),true);
  assert(r('Math.abs(S.kingdom.treasury.cash-cashBefore+INDUSTRIAL_SITES.refinery.capital)<1e-9'));
  assert.equal(r("approveRoyalFacility('refinery','SAU')"),false,'duplicate approvals are atomic');
  r("for(let i=0;i<4;i++)$('step').onclick()");
  assert.equal(r('S.kingdom.industry.last.runs[0].output'),0,'refinery lacks electricity and inputs');
- for(const [type,region] of [['oil','SAU'],['gas','QAT'],['mine','MRT'],['power','SAU'],['steel','SAU']]){
+ for(const [type,region] of [['oil','JOR'],['gas','QAT'],['mine','MRT'],['power','SAU'],['steel','SAU'],['copper','LBN'],['bauxite','TUN'],['phosphate','BHR'],['gold','JOR']]){
   assert(r(`approveRoyalFacility('${type}','${region}')`));
  }
  r("for(let i=0;i<5;i++)$('step').onclick()");
  assert(r(`S.kingdom.industry.last.runs.every(site=>site.output>0)&&
   S.kingdom.industry.last.powerUsed<=S.kingdom.industry.last.generated&&
   S.kingdom.industry.last.sales.steel.quantity>0&&
-  S.kingdom.industry.reserves.oil.SAU<INDUSTRIAL_SITES.oil.deposits.SAU`));
+  S.kingdom.industry.last.sales.gold.quantity>0`));
  assert(r(`Math.abs(S.kingdom.treasury.cash-S.kingdom.treasury.last.closing
   +S.kingdom.industry.last.spent-S.kingdom.industry.last.revenue)<1e-8`));
  const checkpoint=r('JSON.stringify(S)');
@@ -186,16 +189,22 @@ run('renderTick=()=>{}');
   }
   return Object.keys(stock).every(good=>Math.abs(balances[good]-last.sales[good].quantity-stock[good])<1e-8);
  })()`),'inventories reconcile with production, consumption and sales');
- fresh.run("S.kingdom.industry.reserves.oil.SAU=1;$('step').onclick()");
- assert(fresh.run("S.kingdom.industry.reserves.oil.SAU===0&&S.kingdom.industry.last.runs.find(site=>site.type==='oil').output===1"),
-  'the final extraction cannot exceed the remaining reserve');
- fresh.run("$('step').onclick()");
- assert.equal(fresh.run("S.kingdom.industry.last.runs.find(site=>site.type==='oil').output"),0);
  fresh.run("while(S.month<120)$('step').onclick()");
  assert(fresh.run(`S.month===120&&player().fund===0&&
   Object.values(S.kingdom.industry.stock).every(stock=>Number.isFinite(stock)&&stock>=0)`),
-  'industry survives a decade with depleted resources without crediting the sovereign fund');
+  'industry survives a decade without crediting the sovereign fund');
+ assert(fresh.run(`S.kingdom.industry.last.runs.find(site=>site.type==='oil').output>0&&
+  !Object.hasOwn(S.kingdom.industry,'reserves')`),'extraction still operates without a depleting reserve');
  fresh.run("validSave(JSON.parse(JSON.stringify(S)))");
+ fresh.run(`{
+  const older=JSON.parse(checkpoint),industry=older.kingdom.industry;
+  industry.reserves={oil:{SAU:0}};
+  industry.facilities=industry.facilities.filter(site=>!['copper','bauxite','phosphate','gold'].includes(site.type));
+  industry.last.runs=industry.last.runs.filter(site=>industry.facilities.some(f=>f.type===site.type&&f.region===site.region));
+  for(const key of ['copper','bauxite','phosphate','gold']){delete industry.stock[key];delete industry.last.sales[key];}
+  loadSave(JSON.stringify(older));
+ }`);
+ assert(fresh.run("!Object.hasOwn(S.kingdom.industry,'reserves')&&S.kingdom.industry.stock.gold===0&&S.kingdom.industry.facilities.length===6"));
  assert.throws(()=>fresh.run("let malformed=JSON.parse(checkpoint);malformed.kingdom.industry.stock.oil=-1;loadSave(JSON.stringify(malformed))"));
  fresh.run("let legacy=JSON.parse(checkpoint);delete legacy.kingdom.industry;loadSave(JSON.stringify(legacy))");
  assert.equal(fresh.run('S.kingdom.industry.facilities.length'),0,'old kingdom saves gain an empty industry');

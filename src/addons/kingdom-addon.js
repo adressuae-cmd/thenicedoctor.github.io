@@ -1,4 +1,4 @@
-// Alternate 1990 scenario on the Sovereign world. Only the Crown enters the national tick.
+// Alternate scenario on the Sovereign world. Only the Crown enters the national tick.
 const KINGDOM = {id:'UHK',name:'المملكة الهاشمية المتحدة',capital:'يثرب',lon:39.61,lat:24.47,flag:'♜'};
 const KINGDOM_REGIONS = [
  ['ARE','الإمارات'],['SAU','السعودية'],['OMN','عُمان'],['QAT','قطر'],
@@ -91,7 +91,8 @@ function selectMapNationKingdom(id,x,y){
  choose(id);
 }
 
-function startKingdom(){
+function startKingdom(year=ERAS.e2026.year,month=ERAS.e2026.month){
+ if(!Number.isInteger(year)||year<1800||year>2200||!Number.isInteger(month)||month<0||month>11)return false;
  startPause(false);
  newGame();
  // Start from the intact Sovereign catalogue so every constituent is present before consolidation.
@@ -138,8 +139,8 @@ function startKingdom(){
  S.nations.push(realm);
  S.kingdom={region:'SAU',government:'centralized-monarchy',capital:KINGDOM.capital,
   treasury:{cash:0,last:null,transfers:[]},industry:emptyRoyalIndustry()};
- S.startYear=1990;
- S.startMonth=0;
+ S.startYear=year;
+ S.startMonth=month;
  S.options.historyEvents=false;
  S.historyDone=TIMELINE.map((_,index)=>index);
  S.player=selected=KINGDOM.id;
@@ -172,7 +173,6 @@ validSave=function(s){
   }
   const realm=s.nations?.find(n=>n.id===KINGDOM.id);
   if(!realm||s.nations.some(n=>KINGDOM_REGION_IDS.has(n.id))||
-   s.startYear!==1990||s.startMonth!==0||
    s.kingdom.government!=='centralized-monarchy'||s.kingdom.capital!==KINGDOM.capital||
    !KINGDOM_REGION_IDS.has(s.kingdom.region)||!Array.isArray(realm.regions)||
    realm.regions.length!==KINGDOM_REGIONS.length||!validKingdomTreasury(s.kingdom.treasury,s.month))throw Error('بيانات اتحاد المملكة غير صالحة.');
@@ -213,11 +213,19 @@ exportCapacity=function(n,good){
 const originalStartScreenKingdom=startScreen;
 startScreen=function(){
  originalStartScreenKingdom();
+ const defaultMonth=ERAS.e2026.year+'-'+String(ERAS.e2026.month+1).padStart(2,'0');
  $('modalContent').insertAdjacentHTML('afterbegin',
-  '<section dir="rtl" lang="ar"><button id="startKingdom" class="primary full">'
-  +'المملكة الهاشمية المتحدة · ١ يناير ١٩٩٠</button></section>');
+  '<section dir="rtl" lang="ar"><label for="kingdomStartMonth">تاريخ بداية المملكة</label>'
+  +'<input type="month" id="kingdomStartMonth" class="full" dir="ltr" min="1800-01" max="2200-12" value="'+defaultMonth+'">'
+  +'<button id="startKingdom" class="primary full">ابدأ بالمملكة الهاشمية المتحدة</button></section>');
  const button=$('startKingdom');
- if(button)button.onclick=startKingdom;
+ if(button)button.onclick=()=>{
+  const date=$('kingdomStartMonth').value;
+  const match=/^(\d{4})-(0[1-9]|1[0-2])$/.exec(date);
+  if(!match||startKingdom(Number(match[1]),Number(match[2])-1)===false){
+   toast('اختر شهراً بين يناير ١٨٠٠ وديسمبر ٢٢٠٠.');
+  }
+ };
 };
 
 const KINGDOM_NUMBER=new Intl.NumberFormat('ar',{maximumFractionDigits:3});
