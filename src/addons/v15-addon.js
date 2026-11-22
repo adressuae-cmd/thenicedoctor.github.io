@@ -376,6 +376,7 @@ loadSave=function(text){
   if(parsed?.kingdom){
    registerKingdomCities();
    parsed.kingdom.industry=migrateRoyalIndustry(parsed.kingdom.industry);
+   if(parsed.kingdom.council===undefined)parsed.kingdom.council=emptyRoyalGovernment();
   }
   parsed=migrateSave(parsed);
   validSave(parsed);

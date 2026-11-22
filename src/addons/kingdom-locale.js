@@ -1,5 +1,5 @@
 const KINGDOM_UI={
- Overview:'نظرة عامة',Cities:'المدن',Parties:'الحكم',Policies:'السياسات',Agencies:'الهيئات',
+ Overview:'نظرة عامة',Cities:'المدن',Parties:'الحكم',Policies:'السياسات',Agencies:'الديوان الملكي',
  Economy:'الاقتصاد',Growth:'النمو','Central bank':'البنك المركزي',Trade:'التجارة',
  Diplomacy:'الدبلوماسية',Military:'الدفاع',Dispatch:'الأحداث',Sandbox:'الإعدادات',Guide:'الدليل',
  'Pause simulation':'إيقاف المحاكاة','Play simulation':'تشغيل المحاكاة',
@@ -14,7 +14,8 @@ const KINGDOM_UI={
 };
 
 function kingdomLabel(text){
- return S?.kingdom?(KINGDOM_UI[text]??text):text;
+ return S?.kingdom?(Object.hasOwn(KINGDOM_UI,text)?KINGDOM_UI[text]:
+  Object.hasOwn(KINGDOM_LEGACY_LABELS,text)?KINGDOM_LEGACY_LABELS[text]:text):text;
 }
 
 const KINGDOM_COUNTRY_NAMES=new Intl.DisplayNames(['ar'],{type:'region',fallback:'none'});

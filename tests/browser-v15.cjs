@@ -97,7 +97,7 @@ async function main() {
     await kingdom.mouse.click(gaza.x, gaza.y);
     assert.equal(await kingdom.locator('#royalRegion').inputValue(), 'PSE');
     await kingdom.locator('#royalRegionCities').click();
-    assert.match(await kingdom.locator('#citySelect option:checked').innerText(), /Gaza City/);
+    await kingdom.locator('#citySelect option:checked').filter({hasText:'غزة'}).waitFor({state:'attached'});
     const hospital = kingdom.locator('#panel [data-build="hospital"]');
     await hospital.locator('xpath=ancestor::details').locator('summary').click();
     await hospital.click();
@@ -129,6 +129,32 @@ async function main() {
     assert.equal(await kingdom.locator('#royalRegion').inputValue(), 'PSE');
     assert.equal(await kingdom.evaluate(() => player().fund), savedFinances.fund);
     assert.equal(await kingdom.evaluate(() => S.kingdom.industry.facilities.length), 1);
+    await kingdom.locator('[data-view="economy"]').click();
+    await kingdom.getByRole('heading',{name:'الحسابات الوطنية',exact:true}).first().waitFor();
+    await kingdom.locator('[data-view="policies"]').click();
+    await kingdom.getByText('الإنفاق الدفاعي', {exact:true}).first().waitFor();
+    await kingdom.locator('[data-view="agencies"]').click();
+    await kingdom.getByRole('heading',{name:'زايد والوكلاء',exact:true}).waitFor();
+    const beforeOrders = await kingdom.evaluate(() => S.kingdom.council.orders.length);
+    await kingdom.locator('[data-zayed]:not([disabled])').first().click();
+    assert(await kingdom.evaluate(count => S.kingdom.council.orders.length === count + 1 &&
+      S.kingdom.council.orders.at(-1).source === 'zayed', beforeOrders));
+    await kingdom.locator('#royalOrderSector').selectOption('industry');
+    await kingdom.locator('#royalOrderAmount').fill('0.4');
+    await kingdom.locator('#royalAppropriate').click();
+    await kingdom.locator('#royalOrderSector').selectOption('industry');
+    await kingdom.locator('#royalOrderAmount').fill('0.3');
+    await kingdom.locator('#royalCapitalize').click();
+    await kingdom.locator('#royalOrderProject').selectOption('steel');
+    await kingdom.locator('#royalOrderRegion').selectOption('SAU');
+    await kingdom.locator('#royalConstruct').click();
+    await kingdom.locator('[data-council-site="steel:SAU"]').click();
+    assert(await kingdom.evaluate(() => S.kingdom.industry.facilities.some(f=>f.type==='steel'&&f.company==='industry'&&f.paused)));
+    await kingdom.locator('#saveTop').click();
+    await kingdom.reload();
+    await kingdom.locator('#startLoad2').click();
+    assert(await kingdom.evaluate(() => S.kingdom.council.orders.some(o=>o.source==='zayed')&&
+      S.kingdom.industry.facilities.some(f=>f.type==='steel'&&f.company==='industry'&&f.paused)));
     assert(await kingdom.evaluate(() => player().cities.find(city => city.id === 'PSE-0').queue.length === 1));
     assert.deepEqual(await advanceToDecade(kingdom), { month: 120, year: 2015, finiteOutput: true });
     await kingdom.locator('#saveTop').click();
@@ -137,7 +163,7 @@ async function main() {
     assert.equal(await kingdom.evaluate(() => S.month), 120);
     assert(await kingdom.evaluate(() => player().cities.find(city => city.id === 'PSE-0').levels.hospital === 1));
     assert.deepEqual(errors, []);
-    console.log('PASS: 120 browser months in both scenarios, map selection, city project, Arabic navigation, industrial approval and save imports.');
+    console.log('PASS: 120 browser months in both scenarios, map selection, city project, Arabic policy and accounts, royal orders, Zayed approvals and save imports.');
   } finally {
     try {
       await browser?.close();

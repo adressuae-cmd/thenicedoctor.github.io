@@ -138,7 +138,7 @@ function startKingdom(year=ERAS.e2026.year,month=ERAS.e2026.month){
  S.nations=S.nations.filter(n=>!KINGDOM_REGION_IDS.has(n.id));
  S.nations.push(realm);
  S.kingdom={region:'SAU',government:'centralized-monarchy',capital:KINGDOM.capital,
-  treasury:{cash:0,last:null,transfers:[]},industry:emptyRoyalIndustry()};
+  treasury:{cash:0,last:null,transfers:[]},industry:emptyRoyalIndustry(),council:emptyRoyalGovernment()};
  S.startYear=year;
  S.startMonth=month;
  S.options.historyEvents=false;
@@ -155,6 +155,7 @@ function startKingdom(year=ERAS.e2026.year,month=ERAS.e2026.month){
  rebuildNeighboursV12();
  refreshWorld();
  initPaths();
+ S.events=S.events.filter(event=>!event.body.startsWith('Take the helm of Brazil'));
  addEvent('تأسيس المملكة','أصبحت الأقاليم الثمانية والعشرون تحت إدارة التاج الملكي في يثرب.','dispatch');
  wasPlaying=false;
  if(!$('overlay').hidden)closeModal();
@@ -167,6 +168,7 @@ const originalSaveValidatorKingdom=validSave;
 validSave=function(s){
  if(s?.kingdom){
   validateRoyalIndustry(s.kingdom.industry,s.month);
+  validateRoyalGovernment(s.kingdom,s.month);
   const hasInternalPartner=key=>key.split(':').some(id=>KINGDOM_REGION_IDS.has(id));
   if(Object.keys(s.relations??{}).some(hasInternalPartner)){
    throw Error('لا تُسجّل علاقات دبلوماسية مع أقاليم المملكة.');

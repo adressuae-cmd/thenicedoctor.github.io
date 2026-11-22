@@ -211,6 +211,45 @@ run('renderTick=()=>{}');
  assert(fresh.run("!/[A-Za-z]/.test(dateText())&&kingdomLabel('Economy')==='الاقتصاد'"));
  console.log('PASS: industrial finance, input and power constraints, facilities, production and save migration');
 }
+// The council moves actual funds; Zayed's delegates never act without approval.
+{
+ const game=makeGame('build/v15.html'),r=game.run;
+ r("startKingdom(2005,6);S.options.freeReforms=true;S.options.fastReforms=true;enact({...player().targets,taxMode:'simple',tax:55});$('step').onclick()");
+ const opening=r('S.kingdom.treasury.cash');
+ assert(opening>.35);
+ assert(r("POLICY.every(p=>/[؀-ۿ]/.test(kingdomPolicyText(p,'name'))&&/[؀-ۿ]/.test(kingdomPolicyText(p,'description')))"));
+ assert(r("kingdomLabel('No projects queued.')==='لا توجد مشاريع في قائمة الانتظار.'"));
+ assert(!r("executeRoyalOrder('capitalize','energy',{amount:.2})"));
+ game.scope.opening=opening;
+ const proposal=r("JSON.stringify(zayedRecommendations('SAU').find(p=>p.sector==='energy'))");
+ assert.equal(JSON.parse(proposal).kind,'appropriate');
+ assert.equal(r('S.kingdom.council.orders.length'),0,'advice has no independent side effects');
+ assert(r("executeRoyalOrder('appropriate','energy',{amount:.35})"));
+ assert(r("executeRoyalOrder('capitalize','energy',{amount:.3})"));
+ assert(r("Math.abs(S.kingdom.treasury.cash-(opening-.35))<1e-9"));
+ assert(r("Math.abs(S.kingdom.council.ministries.energy.cash-.05)<1e-9"));
+ assert(r("executeRoyalOrder('construct','energy',{type:'oil',region:'SAU',source:'zayed'})"));
+ assert(!r("executeRoyalOrder('construct','mining',{type:'oil',region:'JOR'})"));
+ assert(!r("executeRoyalOrder('construct','energy',{type:'oil',region:'SAU'})"));
+ r("for(let i=0;i<3;i++)$('step').onclick()");
+ assert(r("S.kingdom.council.companies.energy.revenue>0&&S.kingdom.council.companies.energy.operating>0"));
+ assert.equal(r('S.kingdom.industry.last.revenue'),0,'a company sale is not credited to the treasury a second time');
+ assert(r("executeRoyalOrder('suspend','energy',{type:'oil',region:'SAU'})"));
+ r("$('step').onclick()");
+ assert.deepEqual(Array.from(r('S.kingdom.industry.last.runs')),[]);
+ const checkpoint=r('JSON.stringify(S)');
+ const fresh=makeGame('build/v15.html');
+ fresh.scope.checkpoint=checkpoint;
+ fresh.run('loadSave(checkpoint)');
+ assert(fresh.run('JSON.stringify(S)')===checkpoint);
+ assert(fresh.run("executeRoyalOrder('resume','energy',{type:'oil',region:'SAU'})"));
+ fresh.run("$('step').onclick()");
+ assert(fresh.run('S.kingdom.industry.last.runs[0].output>0&&S.kingdom.council.orders.some(o=>o.source==="zayed")'));
+ assert.throws(()=>fresh.run("const badCouncil=JSON.parse(checkpoint);badCouncil.kingdom.council.companies.energy.cash=-1;loadSave(JSON.stringify(badCouncil))"));
+ fresh.run("const oldCouncil=JSON.parse(checkpoint);oldCouncil.kingdom.industry.facilities=[];delete oldCouncil.kingdom.council;loadSave(JSON.stringify(oldCouncil))");
+ assert.equal(fresh.run('S.kingdom.council.orders.length'),0);
+ console.log('PASS: ministries, independent company cash, royal orders, Zayed approval and save migration');
+}
 // node-only:end
 
 // ---- V6 boots into Easy, which is a world with no national debt at all.

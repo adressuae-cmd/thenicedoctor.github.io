@@ -41,20 +41,27 @@ function migrateRoyalIndustry(industry){
  return industry;
 }
 
-function approveRoyalFacility(type,region){
+function approveRoyalFacility(type,region,company){
  const spec=Object.hasOwn(INDUSTRIAL_SITES,type)?INDUSTRIAL_SITES[type]:null;
  if(S.player!==KINGDOM.id||!S.kingdom||!spec||!KINGDOM_REGION_IDS.has(region))return false;
- const industry=S.kingdom.industry,treasury=S.kingdom.treasury;
- if(industry.facilities.length>=MAX_ROYAL_FACILITIES||treasury.cash<spec.capital||
+ const {industry,treasury,council:government}=S.kingdom;
+ if(company!==undefined&&company!==spec.ministry)return false;
+ const account=company?government.companies[company]:treasury;
+ if(industry.facilities.length>=MAX_ROYAL_FACILITIES||account.cash<spec.capital||
    industry.facilities.some(site=>site.type===type&&site.region===region))return false;
- treasury.cash-=spec.capital;
- industry.facilities.push({type,region,ordered:S.month,ready:S.month+spec.months});
+ account.cash-=spec.capital;
+ const site={type,region,ordered:S.month,ready:S.month+spec.months};
+ if(company){
+  Object.assign(site,{company,paused:false});
+  account.construction+=spec.capital;
+ }
+ industry.facilities.push(site);
  addEvent('اعتماد مشروع صناعي',INDUSTRIAL_MINISTRIES[spec.ministry]+' · '+spec.label,'economy');
  return true;
 }
 
 function settleRoyalIndustry(){
- const realm=nation(KINGDOM.id),{industry,treasury}=S.kingdom;
+ const realm=nation(KINGDOM.id),{industry,treasury,council:government}=S.kingdom;
  const workers=Object.fromEntries(realm.regions.map(region=>[
   region.id,realm.pop*region.populationWeight*1e6*realm.participation*(1-realm.unemployment/100)*.01
  ]));
@@ -63,21 +70,26 @@ function settleRoyalIndustry(){
  for(const type of INDUSTRY_ORDER){
   const spec=INDUSTRIAL_SITES[type];
   for(const site of industry.facilities){
-   if(site.type!==type||site.ready>S.month)continue;
+   if(site.type!==type||site.ready>S.month||site.paused)continue;
+   const account=site.company?government.companies[site.company]:treasury;
    const [input,quantity]=spec.input??[];
-   let utilization=Math.min(1,workers[site.region]/spec.workers,treasury.cash/spec.cost);
+   let utilization=Math.max(0,Math.min(1,workers[site.region]/spec.workers,account.cash/spec.cost));
    if(!Number.isFinite(utilization))utilization=0;
    if(input)utilization=Math.min(utilization,industry.stock[input]/quantity);
    if(spec.power)utilization=Math.min(utilization,power/spec.power);
    const output=spec.output*utilization;
-   if(input)industry.stock[input]=Math.max(0,industry.stock[input]-quantity*utilization);
+   if(input)removeRoyalStock(input,quantity*utilization);
    power=Math.max(0,power-spec.power*utilization);
    if(type==='power'){power+=output;generated+=output;}
-   else industry.stock[spec.good]+=output;
+   else{
+    industry.stock[spec.good]+=output;
+    if(site.company)government.companyStock[spec.good]+=output;
+   }
    workers[site.region]-=utilization*spec.workers;
    const cost=spec.cost*utilization;
-   treasury.cash=Math.max(0,treasury.cash-cost);
-   spent+=cost;
+   account.cash=Math.max(0,account.cash-cost);
+   if(site.company)account.operating+=cost;
+   else spent+=cost;
    runs.push({type,region:site.region,output,cost,workers:utilization*spec.workers});
   }
  }
@@ -85,14 +97,21 @@ function settleRoyalIndustry(){
  for(const [good,[,price,demand]] of Object.entries(INDUSTRIAL_GOODS)){
   // Reserve feedstock for existing and commissioned downstream plants.
   const reserved=industry.facilities.reduce((sum,site)=>{
+   if(site.paused)return sum;
    const input=INDUSTRIAL_SITES[site.type].input;
    return sum+(input?.[0]===good?input[1]:0);
   },0);
   const surplus=Math.max(0,industry.stock[good]-reserved);
   const quantity=Math.min(demand,surplus);
   const value=quantity*price*(1-.25*quantity/demand);
-  industry.stock[good]-=quantity;
-  revenue+=value;
+  const companyQuantity=removeRoyalStock(good,quantity);
+  const companyValue=quantity?value*companyQuantity/quantity:0;
+  if(companyValue){
+   const company=royalCompanyForGood(good);
+   company.cash+=companyValue;
+   company.revenue+=companyValue;
+  }
+  revenue+=value-companyValue;
   sales[good]={quantity,value};
  }
  treasury.cash+=revenue;
@@ -148,7 +167,7 @@ economyPanel=function(n){
   return metric(INDUSTRIAL_SITES[site.type].label+' · '+n.regions.find(r=>r.id===site.region).name,
    site.ready>S.month?'قيد الإنشاء':run?'الإنتاج '+KINGDOM_NUMBER.format(run.output)+unit:'بانتظار أول دورة تشغيل');
  }).join('');
- return '<section class="block" dir="rtl" lang="ar"><h3>الشركة الملكية للإنتاج</h3>'
+ return '<section class="block" dir="rtl" lang="ar"><h3>الإنتاج الصناعي</h3>'
   +metric('الإقليم المختار',n.regions.find(r=>r.id===region).name)
   +(S.player===n.id?'<label for="royalFacility">اعتماد منشأة في الإقليم</label><select id="royalFacility" class="full">'
    +INDUSTRY_ORDER.map(type=>{
@@ -158,7 +177,7 @@ economyPanel=function(n){
   +facilities+reserves+market
   +(last?metric('الكهرباء المنتجة',KINGDOM_NUMBER.format(last.generated)+' غيغاواط ساعة')
    +metric('الكهرباء المستهلكة',KINGDOM_NUMBER.format(last.powerUsed)+' غيغاواط ساعة')
-   +metric('مبيعات الشهر',kingdomMoney(last.revenue))+metric('تشغيل الشهر',kingdomMoney(last.spent))
+   +metric('مبيعات الخزينة هذا الشهر',kingdomMoney(last.revenue))+metric('تكاليف تشغيل الخزينة',kingdomMoney(last.spent))
    +metric('صافي التدفق التشغيلي',kingdomMoney(last.revenue-last.spent)):'')+'</section>'+base;
 };
 

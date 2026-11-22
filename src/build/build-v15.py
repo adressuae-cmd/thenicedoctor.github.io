@@ -69,6 +69,21 @@ rep("'Playing as '+n.name+' · '+(playing?'Time is advancing':'Time is paused')"
     "kingdomLabel('Playing as ')+kingdomNationName(n)+' · '+kingdomLabel(playing?'Time is advancing':'Time is paused')")
 rep("n.name.toUpperCase()", "kingdomNationName(n).toUpperCase()")
 
+rep("""<span>'+x.name+'</span><output id="o-""",
+    """<span>'+kingdomPolicyText(x,'name')+'</span><output id="o-""")
+rep("<small>'+x.desc+'</small>", "<small>'+kingdomPolicyText(x,'description')+'</small>")
+rep("""<div class="policylive"><span>Current: '+""",
+    """<div class="policylive"><span>'+kingdomLabel('Current:')+' '+""")
+rep("""+'</span><span>Target: '+n.targets[x.key]""",
+    """+'</span><span>'+kingdomLabel('Target:')+' '+n.targets[x.key]""")
+
+rep("escapeHTML(e.title)", "escapeHTML(kingdomLabel(e.title))", count=2)
+rep("escapeHTML(e.body)", "escapeHTML(kingdomLabel(e.body))")
+rep("escapeHTML(e.body.slice(0,95))", "escapeHTML(kingdomLabel(e.body).slice(0,95))")
+rep("gameDate(e.month).toLocaleDateString('en',",
+    "gameDate(e.month).toLocaleDateString(S.kingdom?'ar':'en',", count=2)
+rep("function toast(s){$('toast').textContent=s;", "function toast(s){$('toast').textContent=kingdomLabel(s);")
+
 # V12 attached its budget fit in render(). Opening the Ideologies tab only calls renderPanel(), which
 # rebinds the preset buttons without it, so in ordinary play the fit never ran. V15 attaches preset
 # funding in bindPanel, which every panel draw goes through; the render-level hook is retired so the
@@ -127,9 +142,10 @@ kingdom_map = (SRC / 'data' / 'kingdom-map-supplement.json').read_text().strip()
 rep('<script id="world-data"', '<script type="application/json" id="kingdom-map">'
     + kingdom_map + '</script>\n<script id="world-data"')
 addon = '\n'.join((SRC / 'addons' / name).read_text()
-                  for name in ('v15-addon.js', 'kingdom-addon.js', 'kingdom-finance.js', 'kingdom-industry.js', 'kingdom-locale.js'))
+                  for name in ('v15-addon.js', 'kingdom-addon.js', 'kingdom-finance.js', 'kingdom-industry.js', 'kingdom-locale.js',
+                               'kingdom-government.js', 'kingdom-translations.js'))
 rep('newGame();initPaths();render();installMobileMap();startScreen();',
-    addon + '\nnewGame();initPaths();render();installMobileMap();startScreen();')
+    addon + '\nwatchKingdomTranslations();newGame();initPaths();render();installMobileMap();startScreen();')
 
 (BUILD / 'v15.html').write_text(s)
 (BUILD / 'v15-engine.js').write_text(re.findall(r'<script>([\s\S]*?)</script>', s)[-1])
