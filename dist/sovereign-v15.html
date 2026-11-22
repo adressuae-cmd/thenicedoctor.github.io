@@ -4518,7 +4518,7 @@ const ROYAL_DELEGATES={
 };
 const ROYAL_ORDER_ACTIONS={
  appropriate:'تخصيص ميزانية للوزارة',capitalize:'تمويل الشركة من الوزارة',
- construct:'اعتماد منشأة للشركة',suspend:'تعليق تشغيل المنشأة',resume:'استئناف تشغيل المنشأة'
+ construct:'اعتماد منشأة للشركة',transfer:'نقل منشأة عامة إلى الشركة',suspend:'تعليق تشغيل المنشأة',resume:'استئناف تشغيل المنشأة'
 };
 const ROYAL_LEDGER_LIMIT=200;
 
@@ -4553,6 +4553,10 @@ function executeRoyalOrder(kind,sector,{amount,type,region,source='king'}={}){
     INDUSTRIAL_SITES[type].ministry!==sector)return false;
   if(kind==='construct'){
    if(!approveRoyalFacility(type,region,sector))return false;
+  }else if(kind==='transfer'){
+   const site=industry.facilities.find(site=>site.type===type&&site.region===region&&site.company===undefined);
+   if(!site)return false;
+   Object.assign(site,{company:sector,paused:false});
   }else{
    const site=industry.facilities.find(site=>site.type===type&&site.region===region&&site.company===sector);
    const paused=kind==='suspend';
@@ -4663,9 +4667,14 @@ function royalCouncilPanel(n){
   +royalSelect('royalOrderProject','منشأة الشركة',INDUSTRY_ORDER.map(type=>[type,INDUSTRIAL_SITES[type].label]))
   +royalSelect('royalOrderRegion','إقليم المشروع',KINGDOM_REGIONS.map(([id,name])=>[id,name]))
   +'<button id="royalConstruct" class="primary full">اعتماد إنشاء المنشأة</button></div>':'';
+ const publicSites=owned?industry.facilities.filter(site=>site.company===undefined).map(site=>
+  metric(INDUSTRIAL_SITES[site.type].label+' · '+n.regions.find(r=>r.id===site.region).name,'على حساب الخزينة')
+  +'<button data-royal-transfer-site="'+site.type+':'+site.region+'">نقل إلى '+ROYAL_COMPANIES[INDUSTRIAL_SITES[site.type].ministry]+'</button>'
+ ).join(''):'';
  const suggestions=owned?'<div class="block"><h3>زايد والوكلاء</h3>'
   +'<p>يجمع زايد توصيات وكلاء الوزارات. تُنفَّذ التوصية بعد اعتمادك.</p>'
   +'<p>توصيات إقليم '+n.regions.find(r=>r.id===region).name+'</p>'
+  +metric('الرصيد المتاح قبل التوصيات',kingdomMoney(S.kingdom.treasury.cash))
   +zayedRecommendations(region).map((proposal,index)=>
    '<div class="projectcard"><strong>'+ROYAL_DELEGATES[proposal.sector]+'</strong>'
    +'<p>'+ROYAL_ORDER_ACTIONS[proposal.kind]+' · '+proposal.message+'</p>'
@@ -4677,7 +4686,7 @@ function royalCouncilPanel(n){
    INDUSTRIAL_MINISTRIES[order.sector]+(order.amount?' · '+kingdomMoney(order.amount):'')
    +(order.source==='zayed'?' · توصية زايد':''))).join('');
  return '<section dir="rtl" lang="ar"><h3>الديوان الملكي</h3>'+suggestions+orderControls+reports+
-  '<h3>آخر الأوامر</h3>'+(orders||'<p>سجل الأوامر فارغ.</p>')+'</section>';
+  (publicSites?'<h3>المنشآت العامة القابلة للنقل</h3>'+publicSites:'')+'<h3>آخر الأوامر</h3>'+(orders||'<p>سجل الأوامر فارغ.</p>')+'</section>';
 }
 
 const previousCouncilPanel=renderPanel;
@@ -4719,6 +4728,10 @@ bindPanel=function(){
   const [type,region]=button.dataset.councilSite.split(':');
   const site=S.kingdom.industry.facilities.find(site=>site.type===type&&site.region===region);
   if(site)issue(site.paused?'resume':'suspend',site.company,{type,region});
+ });
+ panel.querySelectorAll('[data-royal-transfer-site]').forEach(button=>button.onclick=()=>{
+  const [type,region]=button.dataset.royalTransferSite.split(':');
+  issue('transfer',INDUSTRIAL_SITES[type]?.ministry,{type,region});
  });
  const proposals=zayedRecommendations(S.kingdom.region);
  panel.querySelectorAll('[data-zayed]').forEach(button=>button.onclick=()=>{

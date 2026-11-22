@@ -139,6 +139,8 @@ async function main() {
     await kingdom.locator('[data-zayed]:not([disabled])').first().click();
     assert(await kingdom.evaluate(count => S.kingdom.council.orders.length === count + 1 &&
       S.kingdom.council.orders.at(-1).source === 'zayed', beforeOrders));
+    await kingdom.locator('[data-royal-transfer-site="oil:PSE"]').click();
+    assert(await kingdom.evaluate(() => S.kingdom.industry.facilities.some(f=>f.type==='oil'&&f.region==='PSE'&&f.company==='energy')));
     await kingdom.locator('#royalOrderSector').selectOption('industry');
     await kingdom.locator('#royalOrderAmount').fill('0.4');
     await kingdom.locator('#royalAppropriate').click();
