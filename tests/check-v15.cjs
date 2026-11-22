@@ -8,16 +8,133 @@ const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
 function makeGame(file){const html=fs.readFileSync(file,'utf8');
  const embedded=id=>{const m=html.match(new RegExp('<script type="application/json" id="'+id+'">([\\s\\S]*?)<\\/script>'));return m?m[1]:'';};
  const data={'world-data':html.match(/<script id="world-data" type="application\/json">([\s\S]*?)<\/script>/)[1],
-  'city-catalog':embedded('city-catalog'),'added-countries':embedded('added-countries'),'split-polygons':embedded('split-polygons'),'borders':embedded('borders')};
+  'city-catalog':embedded('city-catalog'),'added-countries':embedded('added-countries'),'split-polygons':embedded('split-polygons'),'borders':embedded('borders'),'kingdom-map':embedded('kingdom-map')};
  const code=html.match(/<script>([\s\S]*?)<\/script>/)[1],els=new Map(),registry=new Map(),store=new Map();
  const ctx2d=new Proxy({isPointInPath:()=>false},{get:(t,k)=>t[k]||(()=>{}),set:(t,k,v)=>(t[k]=v,true)});
  function el(id=''){if(els.has(id))return els.get(id);const e={id,innerHTML:'',textContent:data[id]||'',value:id==='mapmode'?'political':'',hidden:id==='overlay',style:{},dataset:{},classList:{toggle(){}},tagName:'DIV',scrollTop:0,addEventListener(){},setAttribute(){},querySelector(){return null},querySelectorAll(){return[]},getBoundingClientRect(){return{width:1100,height:650,left:0,top:0}},getContext(){return ctx2d},insertAdjacentHTML(_,s){this.innerHTML=s+this.innerHTML},focus(){},click(){},scrollIntoView(){},setPointerCapture(){}};els.set(id,e);return e;}
- const scope={console,performance,structuredClone,TextEncoder,Blob,URL,innerWidth:1440,devicePixelRatio:1,Path2D:class{moveTo(){}lineTo(){}closePath(){}},ResizeObserver:class{observe(){}},requestAnimationFrame:()=>1,setTimeout:()=>1,clearTimeout(){},setInterval:()=>1,clearInterval(){},AbortController,localStorage:{getItem:k=>store.get(k)??null,setItem(k,v){store.set(k,v)}},document:{hidden:false,modelContext:{registerTool(t){registry.set(t.name,t)}},activeElement:el('body'),getElementById:el,querySelectorAll:()=>[],addEventListener(){},createElement:()=>el('created')},window:{addEventListener(){}}};
+ const scope={console,performance,structuredClone,TextEncoder,Blob,URL,innerWidth:1440,devicePixelRatio:1,Path2D:class{moveTo(){}lineTo(){}closePath(){}},ResizeObserver:class{observe(){}},requestAnimationFrame:()=>1,setTimeout:()=>1,clearTimeout(){},setInterval:()=>1,clearInterval(){},AbortController,localStorage:{getItem:k=>store.get(k)??null,setItem(k,v){store.set(k,v)}},document:{hidden:false,modelContext:{registerTool(t){registry.set(t.name,t)}},activeElement:el('body'),getElementById:el,querySelectorAll:()=>[],addEventListener(){},createElement:()=>el('created')},addEventListener(){}};
+ scope.window=scope;
  vm.createContext(scope);vm.runInContext(code,scope);return{run:c=>vm.runInContext(c,scope),scope,registry,els,html};}
 // harness:end
 
 const v15=makeGame('build/v15.html'),{run}=v15;
 run('renderTick=()=>{}');
+// node-only:start
+// Browser storage survives a fresh page, including the historic map and deterministic clock.
+{
+ const prior=makeGame('build/v15.html');
+ prior.run("applyDifficulty('medium',true);applyEra('e1970');beginAsV14('JOR');closeModal()");
+ for(let month=1;month<=11;month++){
+  prior.run("$('step').onclick()");
+  assert.equal(prior.run('S.month'), month);
+ }
+ prior.run("S.options.infiniteCapital=true;rolloutV15('hospital');$('saveTop').onclick()");
+ const saved=prior.run("localStorage.getItem('sovereign-save-v1')");
+ assert.equal(JSON.parse(saved).month,11);
+ assert(JSON.parse(saved).nations.find(n=>n.id==='JOR').cities.some(c=>c.queue.some(q=>q.type==='hospital')));
+ prior.run("$('step').onclick()");
+ const month12=prior.run('JSON.stringify(S)');
+
+ const restored=makeGame('build/v15.html');
+ assert.equal(restored.run('CITY_CATALOG.SUN'),undefined);
+ restored.scope.saved=saved;
+ restored.run("localStorage.setItem('sovereign-save-v1',saved);startScreen();$('startLoad2').onclick()");
+ assert(restored.run('JSON.stringify(S)')===saved,'saved state is restored exactly');
+ assert(restored.run("!playing&&$('overlay').hidden&&selected==='JOR'"));
+ assert(restored.run('Object.keys(SPLIT_PATHS).length===6&&paths.length>0&&NEIGHBOURS.size>0'));
+ restored.run("$('step').onclick()");
+ assert(restored.run('JSON.stringify(S)')===month12,'month 12 is deterministic after reload');
+ assert.equal(restored.run('gameDate(S.month).getUTCFullYear()'),1971);
+ assert.equal(restored.run('gameDate(S.month).getUTCMonth()'),0);
+ for(let month=13;month<=120;month++){
+  restored.run("$('step').onclick()");
+  assert.equal(restored.run('S.month'),month);
+  assert(restored.run('S.nations.every(n=>Number.isFinite(n.gdp)&&n.gdp>0&&Number.isFinite(n.debt))'));
+ }
+ assert.equal(restored.run('gameDate(S.month).getUTCFullYear()'),1980);
+ assert(restored.run("paths.some(path=>path.id==='VNM')&&!SPLIT_PATHS.VNN&&!SPLIT_PATHS.VNS"),
+  'Vietnam returns to the map when the historic clock reunifies it');
+ restored.run("$('saveTop').onclick();actions.load()");
+ assert.equal(restored.run('S.month'),120);
+ assert(restored.run("player().cities.some(c=>c.levels.hospital>0)"));
+
+ const before=restored.run('JSON.stringify(S)');
+ const catalogue=restored.run('JSON.stringify(CITY_CATALOG)');
+ assert.throws(()=>restored.run("loadSave(JSON.stringify({...S,player:'RUS'}))"),/player country is missing/);
+ assert.equal(restored.run('JSON.stringify(S)'),before);
+ assert.equal(restored.run('JSON.stringify(CITY_CATALOG)'),catalogue);
+ restored.run("localStorage.setItem('sovereign-save-v1','invalid');startScreen();$('startLoad2').onclick()");
+ assert.equal(restored.run('JSON.stringify(S)'),before);
+ assert.equal(restored.run("$('overlay').hidden"),false);
+ console.log('PASS: 120 monthly steps, year rollover, saved projects, fresh-page restoration and rejected imports');
+}
+
+
+// The Crown replaces its constituents while the administrative data remains in one save.
+{
+ const game=makeGame('build/v15.html');
+ const runKingdom=game.run;
+ const totals=runKingdom(`applyDifficulty('medium',true);(()=>{
+  const regions=KINGDOM_REGIONS.map(([id])=>nation(id));
+  return Object.fromEntries(['pop','gdp','debt','fund','military'].map(key=>
+   [key,regions.reduce((sum,n)=>sum+n[key],0)]));
+ })()`);
+ const cityIds=runKingdom('KINGDOM_REGIONS.flatMap(([id])=>nation(id).cities.map(c=>c.id))');
+ runKingdom("startScreen();$('startKingdom').onclick()");
+ assert.equal(runKingdom('S.player'),'UHK');
+ assert.equal(runKingdom('gameDate(0).toISOString()'),'1990-01-01T00:00:00.000Z');
+ assert.equal(runKingdom('player().regions.length'),28);
+ assert.equal(runKingdom('S.nations.length'),177);
+ for(const [key,expected] of Object.entries(totals)){
+  assert(Math.abs(runKingdom(`player()[${JSON.stringify(key)}]`)-expected)<1e-8,key+' is conserved');
+ }
+ assert.deepEqual(Array.from(runKingdom('player().cities.map(c=>c.id)')),Array.from(cityIds));
+ assert(runKingdom("player().cities.some(city=>city.name==='يثرب')"));
+ assert(runKingdom("KINGDOM_REGIONS.every(([id])=>!nation(id)&&territoryOwner(id)==='UHK'&&paths.some(path=>path.id===id))"));
+ assert(runKingdom("NEIGHBOURS.get('UHK').has('CHN')&&shareBorder('UHK','CHN')&&!shareBorder('UHK','JOR')"));
+ assert(runKingdom("!S.tradeDeals.some(deal=>KINGDOM_REGION_IDS.has(deal.from)||KINGDOM_REGION_IDS.has(deal.to))"));
+ runKingdom("validSave(JSON.parse(JSON.stringify(S)))");
+
+ runKingdom(`
+  S.options.freeReforms=true;S.options.fastReforms=true;
+  enact({...player().targets,taxMode:'simple',tax:55,sovereignFund:5});
+  $('step').onclick();
+ `);
+ assert(runKingdom('S.kingdom.treasury.cash>0&&player().fund===0'),'surpluses stay in the treasury');
+ const cash=runKingdom('S.kingdom.treasury.cash');
+ game.scope.deposit=cash/2;
+ assert.equal(runKingdom("transferKingdomFunds('deposit',deposit)"),true);
+ assert.equal(runKingdom("transferKingdomFunds('deposit',deposit*2)"),false);
+ assert.equal(runKingdom('S.kingdom.treasury.cash+player().fund'),cash);
+ runKingdom("for(let i=1;i<11;i++)$('step').onclick();$('saveTop').onclick()");
+ assert(runKingdom('player().fund>deposit&&player().fund<deposit*1.04'),'only investment return accrues');
+ const checkpoint=runKingdom("localStorage.getItem('sovereign-save-v1')");
+ const reloaded=makeGame('build/v15.html');
+ reloaded.scope.checkpoint=checkpoint;
+ reloaded.run('loadSave(checkpoint)');
+ assert(reloaded.run('JSON.stringify(S)')===checkpoint,'kingdom, regional data and both balances round-trip');
+ for(const mutation of [
+  "broken.territory.PSE='ISR'",
+  "broken.nations.find(n=>n.id==='UHK').regions.pop()",
+  "broken.kingdom.treasury.cash=-1",
+  "broken.kingdom.treasury.last.revenue+=100",
+  "broken.relations['ISR:PSE']=20",
+ ]){
+  assert.throws(()=>reloaded.run(`{const broken=JSON.parse(checkpoint);${mutation};loadSave(JSON.stringify(broken));}`));
+  assert(reloaded.run('JSON.stringify(S)')===checkpoint,'rejected data leaves the live kingdom intact');
+ }
+ runKingdom("$('step').onclick()");
+ reloaded.run("$('step').onclick()");
+ assert(reloaded.run('JSON.stringify(S)')===runKingdom('JSON.stringify(S)'),'consolidated clock stays deterministic');
+ assert.equal(reloaded.run('gameDate(S.month).toISOString()'),'1991-01-01T00:00:00.000Z');
+ reloaded.run("for(let i=12;i<120;i++)$('step').onclick()");
+ assert.equal(reloaded.run('gameDate(S.month).toISOString()'),'2000-01-01T00:00:00.000Z');
+ assert(reloaded.run("KINGDOM_REGIONS.every(([id])=>!nation(id)&&territoryOwner(id)==='UHK')"));
+ assert(reloaded.run('S.nations.every(n=>Number.isFinite(n.gdp)&&Number.isFinite(n.debt))'));
+ reloaded.run('validSave(JSON.parse(JSON.stringify(S)))');
+ console.log('PASS: kingdom integration, 28 administrative regions, consolidated balances and 120 months');
+}
+// node-only:end
 
 // ---- V6 boots into Easy, which is a world with no national debt at all.
 assert.equal(run('S.version'),15);

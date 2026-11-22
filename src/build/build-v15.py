@@ -21,6 +21,25 @@ rep('<title>Sovereign V14 — Agencies &amp; Choose Your Country</title>',
     '<title>Sovereign V15 — Funded Budgets &amp; New Reforms</title>')
 rep('Political sandbox · V14</div>', 'Political sandbox · V15</div>')
 rep("s.version!==14", "s.version!==15")
+rep("()=>{closeModal();actions.load();}", "()=>actions.load()", count=2)
+# An era determines the starting partitions; the live world determines the drawn ones.
+rep("const replaced=new Set(Object.keys(partitionsFor()));",
+    "const replaced=new Set(Object.values(S.partitioned||{}).map(info=>info.parent));")
+
+
+# A province uses the Crown's fill, with an administrative seam in place of a national outline.
+rep("ctx.strokeStyle='#18262b';ctx.lineWidth=.7/t.scale;ctx.stroke(item.path);",
+    "const admin=S.kingdom&&KINGDOM_REGION_IDS.has(item.id);"
+    "ctx.strokeStyle=admin?'#b2a475':'#18262b';ctx.lineWidth=(admin?.45:.7)/t.scale;"
+    "ctx.setLineDash(admin?[2/t.scale,2/t.scale]:[]);ctx.stroke(item.path);ctx.setLineDash([]);")
+rep("if(territoryOwner(p.id)===id)ctx.stroke(p.path);",
+    "if(territoryOwner(p.id)===id&&!(S.kingdom&&id===KINGDOM.id&&KINGDOM_REGION_IDS.has(p.id)))ctx.stroke(p.path);")
+rep("(n.pop*c.share).toFixed(3)", "(n.pop*(c.populationShare??c.share)).toFixed(3)")
+rep("if(closest)return closest;ctx.save()",
+    "if(closest)return S.kingdom&&kingdomRegionAt(mx,my)?KINGDOM.id:closest;ctx.save()")
+rep("if(id)choose(id)}drag=null",
+    "if(id)selectMapNationKingdom(id,e.clientX-r.left,e.clientY-r.top)}drag=null")
+
 
 # V12 attached its budget fit in render(). Opening the Ideologies tab only calls renderPanel(), which
 # rebinds the preset buttons without it, so in ordinary play the fit never ran. V15 attaches preset
@@ -76,7 +95,11 @@ css = '''
 '''
 rep('</style>', css + '\n</style>')
 
-addon = (SRC / 'addons' / 'v15-addon.js').read_text()
+kingdom_map = (SRC / 'data' / 'kingdom-map-supplement.json').read_text().strip()
+rep('<script id="world-data"', '<script type="application/json" id="kingdom-map">'
+    + kingdom_map + '</script>\n<script id="world-data"')
+addon = '\n'.join((SRC / 'addons' / name).read_text()
+                  for name in ('v15-addon.js', 'kingdom-addon.js', 'kingdom-finance.js'))
 rep('newGame();initPaths();render();installMobileMap();startScreen();',
     addon + '\nnewGame();initPaths();render();installMobileMap();startScreen();')
 

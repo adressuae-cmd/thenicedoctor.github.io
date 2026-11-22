@@ -17,6 +17,17 @@ jobs:
         with:
           node-version: '20'
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build the engine fixtures
+        run: |
+          set -euo pipefail
+          for version in {4..15}; do
+            python3 "src/build/build-v${version}.py"
+          done
+
       - name: Run every suite
         run: |
           set -euo pipefail
@@ -36,22 +47,12 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install Pillow
-        run: pip install --quiet pillow
-
       - name: Rebuild the chain from src/base
         run: |
           set -euo pipefail
-          python3 src/build/build-v4.py
-          python3 src/build/build-v5.py
-          python3 src/build/build-v6.py
-          python3 src/build/build-v7.py
+          for version in {4..15}; do
+            python3 "src/build/build-v${version}.py"
+          done
 
-      - name: The rebuild must match the committed artifact byte for byte
-        run: |
-          if ! cmp -s build/v7.html dist/sovereign-v7.html; then
-            echo "::error::dist/sovereign-v7.html is stale. Re-run the build scripts and commit."
-            diff <(wc -c < build/v7.html) <(wc -c < dist/sovereign-v7.html) || true
-            exit 1
-          fi
-          echo "Reproduced dist/sovereign-v7.html exactly."
+      - name: Check the shipped engine artifacts
+        run: git diff --exit-code -- dist/
