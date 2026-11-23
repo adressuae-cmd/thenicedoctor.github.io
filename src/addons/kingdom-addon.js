@@ -91,12 +91,12 @@ function selectMapNationKingdom(id,x,y){
  choose(id);
 }
 
-function startKingdom(year=ERAS.e2026.year,month=ERAS.e2026.month){
+function startKingdom(year=ERAS.e2026.year,month=ERAS.e2026.month,mode='medium'){
  if(!Number.isInteger(year)||year<1800||year>2200||!Number.isInteger(month)||month<0||month>11)return false;
  startPause(false);
  newGame();
  // Start from the intact Sovereign catalogue so every constituent is present before consolidation.
- applyDifficulty('medium',true);
+ applyDifficulty(Object.hasOwn(DIFFICULTY,mode)?mode:'medium',true);
  const parts=KINGDOM_REGIONS.map(([id])=>nation(id));
  if(parts.some(n=>!n))throw Error('Missing constituent in the Sovereign world.');
  const sum=key=>parts.reduce((total,n)=>total+n[key],0);
@@ -212,6 +212,26 @@ exportCapacity=function(n,good){
   (n.gdp/n.regions.reduce((total,r)=>total+r.initialOutput,0));
 };
 
+function kingdomEraSettings(){
+ const date=gameDate(0).toLocaleDateString('ar',{month:'long',year:'numeric',timeZone:'UTC'});
+ return '<h3>تاريخ بداية المملكة</h3><p>تاريخ العالم الحالي: '+escapeHTML(date)+'. '
+  +'اختيار حقبة يطلب تأكيد بدء مملكة جديدة في ذلك التاريخ.</p>'
+  +'<div class="buttonrow modeswitch">'+ERA_KEYS.map(key=>{
+   const e=ERAS[key],selected=e.year===S.startYear&&e.month===S.startMonth;
+   return '<button type="button" data-era="'+key+'"'+(selected?' class="primary" aria-current="date"':'')+'>'
+    +KINGDOM_YEAR.format(e.year)+'</button>';
+  }).join('')+'</div>';
+}
+
+function confirmKingdomEra(key){
+ const e=ERAS[key];
+ if(!e)return;
+ const year=KINGDOM_YEAR.format(e.year);
+ modal('بدء المملكة في '+year+'؟','<p>سيبدأ عالم جديد بالأقاليم الـ٢٨. احفظ تقدمك أولاً إذا أردت الاحتفاظ به.</p>'
+  +'<button type="button" class="primary full" id="confirmEra">ابدأ مملكة جديدة في '+year+'</button>');
+ $('confirmEra').onclick=()=>startKingdom(e.year,e.month,difficultyOf());
+}
+
 const originalStartScreenKingdom=startScreen;
 startScreen=function(){
  originalStartScreenKingdom();
@@ -219,7 +239,16 @@ startScreen=function(){
  $('modalContent').insertAdjacentHTML('afterbegin',
   '<section dir="rtl" lang="ar"><label for="kingdomStartMonth">تاريخ بداية المملكة</label>'
   +'<input type="month" id="kingdomStartMonth" class="full" dir="ltr" min="1800-01" max="2200-12" value="'+defaultMonth+'">'
-  +'<button id="startKingdom" class="primary full">ابدأ بالمملكة الهاشمية المتحدة</button></section>');
+  +'<button id="startKingdom" class="primary full">ابدأ بالمملكة الهاشمية المتحدة</button>'
+  +'<div class="buttonrow" aria-label="بدايات جاهزة للمملكة">'+ERA_KEYS.map(key=>
+   '<button type="button" data-kingdom-start="'+key+'">'+KINGDOM_YEAR.format(ERAS[key].year)+'</button>'
+  ).join('')+'</div></section>');
+ for(const preset of $('modalContent').querySelectorAll('[data-kingdom-start]')){
+  preset.onclick=()=>{
+   const e=ERAS[preset.dataset.kingdomStart];
+   if(e)startKingdom(e.year,e.month);
+  };
+ }
  const button=$('startKingdom');
  if(button)button.onclick=()=>{
   const date=$('kingdomStartMonth').value;
@@ -230,6 +259,7 @@ startScreen=function(){
  };
 };
 
+const KINGDOM_YEAR=new Intl.NumberFormat('ar',{useGrouping:false,numberingSystem:'arab'});
 const KINGDOM_NUMBER=new Intl.NumberFormat('ar',{maximumFractionDigits:3});
 function kingdomMoney(value){return KINGDOM_NUMBER.format(value)+' مليار دولار';}
 

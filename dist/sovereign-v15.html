@@ -440,7 +440,7 @@ function loadSave(text){const parsed=migrateSave(JSON.parse(text));validSave(par
 function exportSave(){const blob=new Blob([JSON.stringify(S)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='sovereign-month-'+S.month+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('Save file exported.');}
 function editScenario(){const n=current();modal('Edit '+escapeHTML(n.name),'<p>Apply immediate changes to this sandbox. These do not represent real-world facts.</p>'+[['gdp','Annual output · $B',n.gdp,1,1000000],['debtRatio','Debt · % of GDP',n.debt/n.gdp*100,0,1200],['stability','Stability · / 100',n.stability,0,100],['capacity','Institutional capacity · / 100',n.capacity,0,100],['approval','Public approval · %',n.approval,0,100],['capital','Political capital',n.capital,0,100]].map(([key,label,value,min,max])=>'<label class="metricrow" for="edit-'+key+'"><span>'+label+'</span><input type="number" id="edit-'+key+'" value="'+value.toFixed(1)+'" min="'+min+'" max="'+max+'" step=".1"></label>').join('')+'<button class="primary full" id="applyScenario">Apply sandbox changes</button>');$('applyScenario').onclick=()=>{const keys=['gdp','debtRatio','stability','capacity','approval','capital'],v={};for(const k of keys){const el=$('edit-'+k);if(!el.checkValidity()||el.value===''||!Number.isFinite(Number(el.value))){el.reportValidity();toast('Enter values within the displayed limits.');return}v[k]=Number(el.value);}n.gdp=v.gdp;n.debt=v.gdp*v.debtRatio/100;for(const k of ['stability','capacity','approval','capital'])n[k]=v[k];n.history.push(n.gdp);if(n.history.length>120)n.history.shift();addEvent('Sandbox conditions changed',n.name+' received a direct scenario adjustment.','model');closeModal();render();toast('Scenario updated.');};}
 const actions={programs:()=>{subview='programs';renderHead();renderPanel();},taxation:()=>{view='policies';subview='taxation';renderHead();renderPanel();},assume:assumeControl,policies:()=>{if(current().id!==S.player)choose(S.player);setView('policies')},discard:()=>{draft={...current().targets};dirty=false;renderPanel();},peace,war:()=>modal('Escalate the conflict?','<p>Declare a conventional war on <b>'+escapeHTML(current().name)+'</b>. This costs 25 political capital, reduces public support and reputation, and damages both economies. Active non-aggression or defense pacts must be withdrawn first. The outcome is uncertain.</p><p>No nuclear weapons or automatic annexation are modeled.</p><button class="danger full" id="confirmWar">Declare war · 25 capital</button>'),save,load:()=>{try{const t=localStorage.getItem('sovereign-save-v1');if(!t)throw Error('No saved world found in this browser.');loadSave(t)}catch(e){toast(e.message)}},export:exportSave,import:()=>$('importFile').click(),editScenario,reset:()=>modal('Start a new world?','<p>This resets the current session. Your browser save remains available. Export your current world first if you want to keep it.</p><button class="primary full" id="confirmReset">Start new world</button>')};
-$('modalContent').addEventListener('click',e=>{if(e.target.id==='confirmWar')declareWar();if(e.target.id==='confirmReset'){wasPlaying=false;newGame();closeModal();render();}});
+$('modalContent').addEventListener('click',e=>{if(e.target.id==='confirmWar')declareWar();if(e.target.id==='confirmReset'){if(S.kingdom)return startKingdom(S.startYear,S.startMonth,difficultyOf());wasPlaying=false;newGame();closeModal();render();}});
 $('importFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{if(f.size>4000000)throw Error('Save file is too large.');loadSave(await f.text())}catch(e){toast('Could not load save: '+e.message)}e.target.value='';};
 // Cached canvas map: equirectangular projection, latitude corrected to reduce polar distortion.
 const canvas=$('map'),ctx=canvas.getContext('2d');let mapW=1,mapH=1,dpr=1,zoom=1,panX=0,panY=0,drawPending=false,paths=[],hoverId=null;
@@ -1369,13 +1369,14 @@ function tickNewsV7(){
   try{return s.when(n,prev)}catch(e){return false}});
  // At most one dispatch a month, so the feed reads like a newspaper rather than a log.
  if(eligible.length){
-  const story=pick(eligible),[title,body]=story.make(n);
+  const story=pick(eligible),[title,body]=kingdomNewsStory(story,n,story.make(n));
   S.newsCooldowns[story.key]=S.month+story.cool;
   addEvent(title,body,story.desk);}
  S.newsPrev={rate:n.mon.rate};
  // Anniversary pieces give the feed a rhythm even in a quiet decade.
  if(S.month>0&&S.month%60===0)
-  addEvent('Five years under review',
+  if(S.kingdom)addEvent('مراجعة خمس سنوات',kingdomFiveYearReview(n),'dispatch');
+  else addEvent('Five years under review',
    n.name+' has recorded average growth of '+pctText(n.growth)+' and inflation of '+n.inflation.toFixed(1)+'% this year. '
    +'Output per person stands at $'+(n.gdp/n.pop*1000).toFixed(0)+', unemployment at '+n.unemployment.toFixed(1)+'%, '
    +'and approval for '+partyName(n)+' at '+n.approval.toFixed(0)+'%.','dispatch');}
@@ -1431,10 +1432,11 @@ function dispatchArchiveV7(){
 // ---------- settings ----------
 const v6SettingsV7=settingsPanel;
 settingsPanel=function(){
- return '<h3>Starting era</h3><p>Current: <b>'+era().name+' — '+era().tag+'</b>. '
+ return (S.kingdom?kingdomEraSettings():'<h3>Starting era</h3><p>Current: <b>'+era().name+' — '+era().tag+'</b>. '
  +'Choosing an era rebuilds the world at that date with period-appropriate output, prices, trade and institutions. It starts a new game.</p>'
  +'<div class="buttonrow modeswitch">'+ERA_KEYS.map(k=>'<button class="'+(k===eraOf()?'primary':'')+'" data-era="'+k+'">'+ERAS[k].name+'</button>').join('')+'</div>'
  +'<p class="muted">'+escapeHTML(era().blurb)+'</p>'
+)
  +'<div class="block"></div><h3>Construction & building</h3>'
  +'<label class="toggleline">Skip construction times<input type="checkbox" data-option="instantBuild" '+(instantBuild()?'checked':'')+'></label>'
  +'<p>'+(instantBuild()
@@ -1454,6 +1456,7 @@ bindPanel=function(){
  v6BindV7();
  for(const b of $('panel').querySelectorAll('[data-era]'))
   b.onclick=()=>{const k=b.dataset.era;
+   if(S.kingdom)return confirmKingdomEra(k);
    modal('Start in '+ERAS[k].name+'?','<p>'+escapeHTML(ERAS[k].blurb)+'</p>'
     +'<p>This starts a new world in '+ERAS[k].year+'. Your current game will be lost unless you have saved it.</p>'
     +'<button class="primary full" id="confirmEra">Start a new world in '+ERAS[k].year+'</button>');
@@ -1590,8 +1593,9 @@ SHOCK_GOOD.push(...SHOCK_GOOD_EXTRA);SHOCK_BAD.push(...SHOCK_BAD_EXTRA);
 shockEventV7=function(n,good){
  if(!newsworthy(n))return;
  const[title,body]=pick(good?SHOCK_GOOD:SHOCK_BAD);
- addEvent(title,n.id===S.player?body(n):n.name+': '+body(n).replace(new RegExp('\\\\b'+n.name+'\\\\b','g'),'the country'),
-  good?'economy':'warning');};
+ const bodyText=n.id===S.player?body(n):n.name+': '+body(n).replace(new RegExp('\\\\b'+n.name+'\\\\b','g'),'the country');
+ const localized=kingdomShockStory(title,bodyText,n);
+ addEvent(...localized,good?'economy':'warning');};
 
 // Quieter stories, so a well-run country still has a newspaper.
 STORIES.push(
@@ -3971,12 +3975,12 @@ function selectMapNationKingdom(id,x,y){
  choose(id);
 }
 
-function startKingdom(year=ERAS.e2026.year,month=ERAS.e2026.month){
+function startKingdom(year=ERAS.e2026.year,month=ERAS.e2026.month,mode='medium'){
  if(!Number.isInteger(year)||year<1800||year>2200||!Number.isInteger(month)||month<0||month>11)return false;
  startPause(false);
  newGame();
  // Start from the intact Sovereign catalogue so every constituent is present before consolidation.
- applyDifficulty('medium',true);
+ applyDifficulty(Object.hasOwn(DIFFICULTY,mode)?mode:'medium',true);
  const parts=KINGDOM_REGIONS.map(([id])=>nation(id));
  if(parts.some(n=>!n))throw Error('Missing constituent in the Sovereign world.');
  const sum=key=>parts.reduce((total,n)=>total+n[key],0);
@@ -4092,6 +4096,26 @@ exportCapacity=function(n,good){
   (n.gdp/n.regions.reduce((total,r)=>total+r.initialOutput,0));
 };
 
+function kingdomEraSettings(){
+ const date=gameDate(0).toLocaleDateString('ar',{month:'long',year:'numeric',timeZone:'UTC'});
+ return '<h3>تاريخ بداية المملكة</h3><p>تاريخ العالم الحالي: '+escapeHTML(date)+'. '
+  +'اختيار حقبة يطلب تأكيد بدء مملكة جديدة في ذلك التاريخ.</p>'
+  +'<div class="buttonrow modeswitch">'+ERA_KEYS.map(key=>{
+   const e=ERAS[key],selected=e.year===S.startYear&&e.month===S.startMonth;
+   return '<button type="button" data-era="'+key+'"'+(selected?' class="primary" aria-current="date"':'')+'>'
+    +KINGDOM_YEAR.format(e.year)+'</button>';
+  }).join('')+'</div>';
+}
+
+function confirmKingdomEra(key){
+ const e=ERAS[key];
+ if(!e)return;
+ const year=KINGDOM_YEAR.format(e.year);
+ modal('بدء المملكة في '+year+'؟','<p>سيبدأ عالم جديد بالأقاليم الـ٢٨. احفظ تقدمك أولاً إذا أردت الاحتفاظ به.</p>'
+  +'<button type="button" class="primary full" id="confirmEra">ابدأ مملكة جديدة في '+year+'</button>');
+ $('confirmEra').onclick=()=>startKingdom(e.year,e.month,difficultyOf());
+}
+
 const originalStartScreenKingdom=startScreen;
 startScreen=function(){
  originalStartScreenKingdom();
@@ -4099,7 +4123,16 @@ startScreen=function(){
  $('modalContent').insertAdjacentHTML('afterbegin',
   '<section dir="rtl" lang="ar"><label for="kingdomStartMonth">تاريخ بداية المملكة</label>'
   +'<input type="month" id="kingdomStartMonth" class="full" dir="ltr" min="1800-01" max="2200-12" value="'+defaultMonth+'">'
-  +'<button id="startKingdom" class="primary full">ابدأ بالمملكة الهاشمية المتحدة</button></section>');
+  +'<button id="startKingdom" class="primary full">ابدأ بالمملكة الهاشمية المتحدة</button>'
+  +'<div class="buttonrow" aria-label="بدايات جاهزة للمملكة">'+ERA_KEYS.map(key=>
+   '<button type="button" data-kingdom-start="'+key+'">'+KINGDOM_YEAR.format(ERAS[key].year)+'</button>'
+  ).join('')+'</div></section>');
+ for(const preset of $('modalContent').querySelectorAll('[data-kingdom-start]')){
+  preset.onclick=()=>{
+   const e=ERAS[preset.dataset.kingdomStart];
+   if(e)startKingdom(e.year,e.month);
+  };
+ }
  const button=$('startKingdom');
  if(button)button.onclick=()=>{
   const date=$('kingdomStartMonth').value;
@@ -4110,6 +4143,7 @@ startScreen=function(){
  };
 };
 
+const KINGDOM_YEAR=new Intl.NumberFormat('ar',{useGrouping:false,numberingSystem:'arab'});
 const KINGDOM_NUMBER=new Intl.NumberFormat('ar',{maximumFractionDigits:3});
 function kingdomMoney(value){return KINGDOM_NUMBER.format(value)+' مليار دولار';}
 
@@ -4561,9 +4595,14 @@ const ROYAL_DELEGATES={
 };
 const ROYAL_ORDER_ACTIONS={
  appropriate:'تخصيص ميزانية للوزارة',capitalize:'تمويل الشركة من الوزارة',
+ companyReturn:'ردّ فائض الشركة إلى الوزارة',ministryReturn:'ردّ فائض الوزارة إلى الخزينة',
  construct:'اعتماد منشأة للشركة',transfer:'نقل منشأة عامة إلى الشركة',suspend:'تعليق تشغيل المنشأة',resume:'استئناف تشغيل المنشأة'
 };
 const ROYAL_LEDGER_LIMIT=200;
+const ROYAL_FUNDING_ROUTES={
+ appropriate:['treasury','ministry'],capitalize:['ministry','company'],
+ companyReturn:['company','ministry'],ministryReturn:['ministry','treasury']
+};
 
 function emptyRoyalGovernment(){
  return {
@@ -4576,21 +4615,24 @@ function emptyRoyalGovernment(){
 
 function royalFundingOrder(kind,sector,amount){
  const {treasury,council:government}=S.kingdom;
- const ministry=government.ministries[sector],company=government.companies[sector];
- const from=kind==='appropriate'?treasury:ministry,to=kind==='appropriate'?ministry:company;
- if(!Number.isFinite(amount)||amount<=0||from.cash<amount||!Number.isFinite(to.cash+amount))return false;
- from.cash-=amount;
- to.cash+=amount;
- return true;
+ const accounts={treasury,ministry:government.ministries[sector],company:government.companies[sector]};
+ const [from,to]=ROYAL_FUNDING_ROUTES[kind].map(key=>accounts[key]);
+ if(!Number.isFinite(amount)||amount<=0||amount-from.cash>1e-12)return 0;
+ const settled=Math.min(amount,from.cash);
+ if(!settled||!Number.isFinite(to.cash+settled))return 0;
+ from.cash-=settled;
+ to.cash+=settled;
+ return settled;
 }
 
 function executeRoyalOrder(kind,sector,{amount,type,region,source='king'}={}){
  if(!S.kingdom||S.player!==KINGDOM.id||!Object.hasOwn(ROYAL_COMPANIES,sector)||
    !Object.hasOwn(ROYAL_ORDER_ACTIONS,kind)||!['king','zayed'].includes(source))return false;
  const {council:government,industry}=S.kingdom;
- const isFunding=kind==='appropriate'||kind==='capitalize';
+ const isFunding=Object.hasOwn(ROYAL_FUNDING_ROUTES,kind);
  if(isFunding){
-  if(!royalFundingOrder(kind,sector,amount))return false;
+  amount=royalFundingOrder(kind,sector,amount);
+  if(!amount)return false;
  }else{
   if(!Object.hasOwn(INDUSTRIAL_SITES,type)||!KINGDOM_REGION_IDS.has(region)||
     INDUSTRIAL_SITES[type].ministry!==sector)return false;
@@ -4704,7 +4746,7 @@ function validateRoyalGovernment(kingdom,month){
     !Number.isInteger(order.month)||order.month<0||order.month>month||
     !Object.hasOwn(ROYAL_ORDER_ACTIONS,order.kind)||!Object.hasOwn(ROYAL_COMPANIES,order.sector)||
     !['king','zayed'].includes(order.source))fail();
-  if(order.kind==='appropriate'||order.kind==='capitalize'){
+  if(Object.hasOwn(ROYAL_FUNDING_ROUTES,order.kind)){
    if(!money(order.amount)||order.amount===0)fail();
   }else if(!Object.hasOwn(INDUSTRIAL_SITES,order.type)||!KINGDOM_REGION_IDS.has(order.region)||
     INDUSTRIAL_SITES[order.type].ministry!==order.sector)fail();
@@ -4739,7 +4781,9 @@ function royalCouncilPanel(n){
   +'<label for="royalOrderAmount">المبلغ بمليارات الدولارات</label>'
   +'<input id="royalOrderAmount" type="number" min="0" step="any" dir="ltr">'
   +'<div class="buttonrow"><button id="royalAppropriate">تخصيص من الخزينة</button>'
-  +'<button id="royalCapitalize">تمويل الشركة</button></div>'
+  +'<button id="royalCapitalize">تمويل الشركة</button>'
+  +'<button id="royalCompanyReturn">ردّ فائض الشركة إلى الوزارة</button>'
+  +'<button id="royalMinistryReturn">ردّ فائض الوزارة إلى الخزينة</button></div>'
   +royalSelect('royalOrderProject','منشأة الشركة',INDUSTRY_ORDER.map(type=>[type,INDUSTRIAL_SITES[type].label]))
   +royalSelect('royalOrderRegion','إقليم المشروع',KINGDOM_REGIONS.map(([id,name])=>[id,name]))
   +'<button id="royalConstruct" class="primary full">اعتماد إنشاء المنشأة</button></div>':'';
@@ -4792,7 +4836,8 @@ bindPanel=function(){
   renderPanel();
   toast('نُفّذ الأمر الملكي وسُجّل في الديوان.');
  };
- for(const [id,kind] of [['royalAppropriate','appropriate'],['royalCapitalize','capitalize']]){
+ for(const [id,kind] of [['royalAppropriate','appropriate'],['royalCapitalize','capitalize'],
+  ['royalCompanyReturn','companyReturn'],['royalMinistryReturn','ministryReturn']]){
   const button=panel.querySelector('#'+id);
   if(button)button.onclick=()=>issue(kind,$('royalOrderSector').value,{amount:Number($('royalOrderAmount').value)});
  }
@@ -5804,6 +5849,140 @@ function kingdomLegacySentence(text){
   if(match)return translate(match);
  }
  return text;
+}
+
+Object.assign(KINGDOM_LEGACY_LABELS,{
+ 'Start a new world?':'بدء عالم جديد؟',
+ 'Choose how demanding this world should be':'اختر مستوى صعوبة العالم',
+ 'Which country will you lead?':'أي دولة ستقود؟',
+ 'Start in 1970':'ابدأ في ١٩٧٠',
+ 'Start in 1985':'ابدأ في ١٩٨٥',
+ 'Start in 2000':'ابدأ في ٢٠٠٠',
+ 'Present day':'الحاضر',
+ 'Cold War':'الحرب الباردة',
+ 'Post-Cold War':'ما بعد الحرب الباردة',
+ 'Start on Easy':'ابدأ على المستوى السهل',
+ 'Start on Medium':'ابدأ على المستوى المتوسط',
+ 'Start on Hard':'ابدأ على المستوى الصعب',
+ 'National debt:':'الدين العام:',
+ 'Supply shocks:':'صدمات الإمداد:',
+ 'Rival nations:':'الدول المنافسة:',
+ 'switched off':'معطّل',
+ 'forgiving carrying costs':'تكاليف خدمة ميسّرة',
+ 'standard carrying costs':'تكاليف خدمة عادية',
+ 'normal':'عادية',
+ 'none':'لا توجد',
+ 'Era settings':'إعدادات الحقبة',
+ 'Trade openness':'الانفتاح التجاري'
+});
+
+// Monthly newspaper copy is generated from the same state as the Sovereign stories.
+const newsPct=value=>KINGDOM_NUMBER.format(value)+'٪';
+const newsNumber=value=>KINGDOM_NUMBER.format(value);
+const newsMoney=value=>'$'+newsNumber(value);
+const newsCity=name=>kingdomLabel(name);
+const KINGDOM_NEWS={
+ inflationBite:n=>['الأسعار تسبق الأجور',
+  'بلغ التضخم '+newsPct(n.inflation)+' مقابل توقعات عند '+newsPct(n.mon.expected)+'. معدل الفائدة '+newsPct(n.mon.rate)+'.'],
+ deflation:n=>['ضعف الطلب يضغط على الأسعار',
+  'بلغ التضخم '+newsPct(n.inflation)+' وفجوة الناتج '+newsPct(n.outputGap)+'. البطالة '+newsPct(n.unemployment)+'.'],
+ boom:n=>['الطلب يتجاوز قدرة الاقتصاد',
+  'الناتج أعلى من مستواه المحتمل بنسبة '+newsPct(n.outputGap)+'. النمو '+newsPct(n.growth)+' والتضخم '+newsPct(n.inflation)+'.'],
+ recession:n=>['الاقتصاد يتراجع',
+  'النمو '+newsPct(n.growth)+' والبطالة '+newsPct(n.unemployment)+'. فجوة الناتج '+newsPct(n.outputGap)+'.'],
+ convergence:n=>['الاقتصاد يقترب من مستويات إنتاجية أعلى',
+  'نمو الناتج المحتمل '+newsPct(n.potentialGrowth)+'. الناتج للفرد '+newsMoney(n.gdp/n.pop*1000)+'.'],
+ stagnation:n=>['تباطؤ نمو القدرة الإنتاجية',
+  'نمو الناتج المحتمل '+newsPct(n.potentialGrowth)+' ومساهمة الإنتاجية '+newsPct(n.tfpGrowth)+'.'],
+ ratesUp:n=>['رفع سعر الفائدة',
+  'أصبح سعر السياسة '+newsPct(n.mon.rate)+'، والتضخم المتوقع '+newsPct(n.mon.expected)+'. هامش الإقراض '+newsNumber(n.mon.spread)+' نقطة.'],
+ ratesDown:n=>['خفض سعر الفائدة',
+  'أصبح سعر السياسة '+newsPct(n.mon.rate)+'، والسعر الحقيقي المتوقع '+newsPct(n.mon.rate-n.mon.expected)+'.'],
+ credibility:n=>['تراجع الثقة بهدف التضخم',
+  'مصداقية البنك '+newsNumber(n.mon.credibility)+' من ١٠٠. التوقعات '+newsPct(n.mon.expected)+' مقابل الهدف '+newsPct(n.policies.inflationTarget)+'.'],
+ currency:n=>['انحراف في سعر الصرف الحقيقي',
+  'يبلغ مؤشر سعر الصرف الحقيقي '+newsNumber(n.reer)+' مقارنة بأساس ١٠٠. الحساب الجاري '+newsPct(n.currentAccount)+'.'],
+ unemployment:n=>['البطالة تتجاوز حدها الهيكلي',
+  'البطالة '+newsPct(n.unemployment)+' مقابل حد هيكلي '+newsPct(n.nairu)+'. فجوة الناتج '+newsPct(n.outputGap)+'.'],
+ inequality:n=>['اتساع تفاوت الدخل',
+  'مؤشر تفاوت الدخل '+newsNumber(n.inequality)+' من ١٠٠. الحماية الاجتماعية تعادل '+newsPct(n.policies.welfare)+' من الناتج.'],
+ crime:n=>['ارتفاع ضغط الجريمة',
+  'مؤشر ضغط الجريمة '+newsNumber(n.crime)+' من ١٠٠. البطالة '+newsPct(n.unemployment)+'.'],
+ safeCities:n=>['تحسّن السلامة في المدن',
+  'تراجع ضغط الجريمة إلى '+newsNumber(n.crime)+' من ١٠٠، وبلغ رضا السكان '+newsNumber(n.citySatisfaction)+'.'],
+ approvalLow:n=>['تراجع التأييد الشعبي',
+  'بلغ التأييد '+newsPct(n.approval)+' والاستقرار '+newsNumber(n.stability)+' من ١٠٠.'],
+ approvalHigh:n=>['ارتفاع التأييد الشعبي',
+  'بلغ التأييد '+newsPct(n.approval)+'. النمو '+newsPct(n.growth)+' والتضخم '+newsPct(n.inflation)+'.'],
+ debtStress:n=>['ضغط على المالية العامة',
+  'بلغ الدين '+newsPct(n.debt/n.gdp*100)+' من الناتج. رصيد الميزانية '+newsPct(fiscal(n).balance)+' من الناتج.'],
+ tradeGrowth:n=>['التجارة تدعم النمو',
+  'صادرات الشهر '+kingdomMoney(n.exports)+' ووارداته '+kingdomMoney(n.imports)+'.'],
+ sanctioned:n=>['العقوبات تضغط على النشاط الاقتصادي',
+  'عدد العقوبات المرتبطة بالدولة '+newsNumber(S.sanctions.filter(item=>item.split(':').includes(n.id)).length)+'.'],
+ coldWorld:()=>['التضخم يرتفع عالمياً',
+  'التضخم العالمي '+newsPct(worldInflation)+' والفائدة '+newsPct(worldRate)+' والنمو '+newsPct(worldGrowth)+'.'],
+ worldBoom:()=>['تسارع الاقتصاد العالمي',
+  'النمو العالمي '+newsPct(worldGrowth)+' والتضخم '+newsPct(worldInflation)+'.'],
+ steady:n=>['أداء اقتصادي مستقر',
+  'النمو '+newsPct(n.growth)+' والتضخم '+newsPct(n.inflation)+' والبطالة '+newsPct(n.unemployment)+'.'],
+ election:n=>['اقتراب الانتخابات',
+  'باقٍ '+newsNumber(n.election)+' شهراً للانتخابات. التأييد '+newsPct(n.approval)+' والنمو '+newsPct(n.growth)+'.'],
+ cityBuild:n=>{
+  const c=n.cities.find(city=>city.queue.length),project=c.queue[0];
+  return ['مشروع قيد الإنشاء في '+newsCity(c.name),
+   kingdomLabel(PROJECTS[project.type].name)+' · تبقّى '+newsNumber(project.remaining)+' من أصل '+newsNumber(project.duration)+' شهراً.'];
+ },
+ population:n=>[n.popGrowth>0?'السكان في ازدياد':'السكان في تراجع',
+  'عدد السكان '+newsNumber(n.pop)+' مليون. معدل التغير السنوي '+newsPct(n.popGrowth*100)+' والمشاركة في العمل '+newsPct(n.participation*100)+'.'],
+ reserves:n=>['ارتفاع رصيد الصندوق السيادي',
+  'يبلغ رصيد الصندوق '+kingdomMoney(n.fund)+'، أي '+newsPct(n.fund/n.gdp*100)+' من الناتج السنوي.'],
+ era:n=>['مرور عقد على بداية الفترة',
+  'النمو في الوقت الحالي '+newsPct(n.growth)+' والناتج للفرد '+newsMoney(n.gdp/n.pop*1000)+' والبطالة '+newsPct(n.unemployment)+'.']
+};
+
+function kingdomNewsStory(story,n,original){
+ return S.kingdom&&Object.hasOwn(KINGDOM_NEWS,story.key)?KINGDOM_NEWS[story.key](n):original;
+}
+
+const KINGDOM_SHOCK_NEWS={
+ 'Investment cycle strengthens':['انتعاش الاستثمار','يدعم الاستثمار الجديد الطلب في الأشهر المقبلة.'],
+ 'Export orders rise':['زيادة طلبات التصدير','يدعم الطلب الخارجي القوي الإنتاج مؤقتاً.'],
+ 'A good harvest':['موسم زراعي جيد','المحصول القوي يخفف ضغط أسعار الغذاء.'],
+ 'Energy prices fall back':['انخفاض أسعار الطاقة','تراجع تكاليف الوقود يخفف الضغط على المصانع.'],
+ 'A productivity surprise':['ارتفاع الإنتاجية فوق المتوقع','تحسّن الناتج لكل ساعة عمل.'],
+ 'Energy costs climb':['ارتفاع تكلفة الطاقة','صدمة إمداد رفعت تكاليف الوقود والكهرباء. تخفف الطاقة النظيفة أثرها.'],
+ 'Credit conditions tighten':['تشدد الائتمان','يرجّح أن يتباطأ الاستثمار لنحو تسعة أشهر.'],
+ 'Supply chains seize up':['اضطراب سلاسل الإمداد','تعطّل الشحن ونقص المكوّنات يضغطان على الإنتاج.'],
+ 'A poor harvest':['تراجع المحصول','ارتفاع أسعار الغذاء يضغط على دخول الأسر.'],
+ 'Confidence drains away':['تراجع الثقة','تؤجّل الشركات والأسر بعض قرارات الإنفاق.'],
+ 'Construction picks up':['انتعاش الإنشاء','زادت أعمال الإسكان والبنية التحتية، ويستجيب التوظيف بتأخير.'],
+ 'Tourism has a record season':['موسم سياحي قوي','ارتفاع عدد الزوار يدعم وظائف الخدمات.'],
+ 'A technology upgrade lands':['تحديث المعدات الصناعية','تدخل معدات جديدة الخدمة في القطاع الصناعي.'],
+ 'Commodity terms of trade improve':['تحسّن شروط تجارة السلع','تحصل الصادرات على مقابل أعلى وتنخفض تكلفة الواردات.'],
+ 'Drought strains the interior':['الجفاف يضغط على المناطق الداخلية','نقص المياه يؤثر في الزراعة وتوليد الكهرباء.'],
+ 'A bank runs into trouble':['ضغوط على بنك محلي','تعرض أحد المقرضين الرئيسيين لضغوط مالية.'],
+ 'Industrial action spreads':['اتساع الإضراب الصناعي','توقفت أجزاء من الإنتاج نتيجة خلافات على الأجور.'],
+ 'An export market closes':['إغلاق سوق تصدير','يبحث المصدّرون عن بدائل بعد توقف مشترٍ رئيسي.']
+};
+
+function kingdomShockStory(title,body,n){
+ if(!S.kingdom||!Object.hasOwn(KINGDOM_SHOCK_NEWS,title))return [title,body];
+ const [headline,summary]=KINGDOM_SHOCK_NEWS[title];
+ const context={
+  'Energy costs climb':()=> 'مؤشر الطاقة النظيفة '+newsNumber(n.clean)+' من ١٠٠.',
+  'Credit conditions tighten':()=> 'هامش الإقراض '+newsNumber(n.mon.spread)+' نقطة.',
+  'A technology upgrade lands':()=> 'الإنفاق على البحث '+newsPct(n.policies.research)+' من الناتج.',
+  'Commodity terms of trade improve':()=> 'الميزان التجاري '+kingdomMoney(n.exports-n.imports)+' شهرياً.',
+  'A bank runs into trouble':()=> 'ضوابط الاستقرار المالي عند '+newsNumber(n.policies.macroprudential)+' من ١٠٠.',
+  'Industrial action spreads':()=> 'بلغ التضخم '+newsPct(n.inflation)+'.'
+ };
+ return [headline,kingdomNationName(n)+' · '+summary+(context[title]?' '+context[title]():'')];
+}
+
+function kingdomFiveYearReview(n){
+ return 'النمو '+newsPct(n.growth)+' والتضخم '+newsPct(n.inflation)+'. الناتج للفرد '
+  +newsMoney(n.gdp/n.pop*1000)+' والبطالة '+newsPct(n.unemployment)+' والتأييد '+newsPct(n.approval)+'.';
 }
 
 watchKingdomTranslations();newGame();initPaths();render();installMobileMap();startScreen();new ResizeObserver(resizeMap).observe(canvas);resizeMap();

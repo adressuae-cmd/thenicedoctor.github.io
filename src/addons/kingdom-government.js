@@ -7,9 +7,14 @@ const ROYAL_DELEGATES={
 };
 const ROYAL_ORDER_ACTIONS={
  appropriate:'تخصيص ميزانية للوزارة',capitalize:'تمويل الشركة من الوزارة',
+ companyReturn:'ردّ فائض الشركة إلى الوزارة',ministryReturn:'ردّ فائض الوزارة إلى الخزينة',
  construct:'اعتماد منشأة للشركة',transfer:'نقل منشأة عامة إلى الشركة',suspend:'تعليق تشغيل المنشأة',resume:'استئناف تشغيل المنشأة'
 };
 const ROYAL_LEDGER_LIMIT=200;
+const ROYAL_FUNDING_ROUTES={
+ appropriate:['treasury','ministry'],capitalize:['ministry','company'],
+ companyReturn:['company','ministry'],ministryReturn:['ministry','treasury']
+};
 
 function emptyRoyalGovernment(){
  return {
@@ -22,21 +27,24 @@ function emptyRoyalGovernment(){
 
 function royalFundingOrder(kind,sector,amount){
  const {treasury,council:government}=S.kingdom;
- const ministry=government.ministries[sector],company=government.companies[sector];
- const from=kind==='appropriate'?treasury:ministry,to=kind==='appropriate'?ministry:company;
- if(!Number.isFinite(amount)||amount<=0||from.cash<amount||!Number.isFinite(to.cash+amount))return false;
- from.cash-=amount;
- to.cash+=amount;
- return true;
+ const accounts={treasury,ministry:government.ministries[sector],company:government.companies[sector]};
+ const [from,to]=ROYAL_FUNDING_ROUTES[kind].map(key=>accounts[key]);
+ if(!Number.isFinite(amount)||amount<=0||amount-from.cash>1e-12)return 0;
+ const settled=Math.min(amount,from.cash);
+ if(!settled||!Number.isFinite(to.cash+settled))return 0;
+ from.cash-=settled;
+ to.cash+=settled;
+ return settled;
 }
 
 function executeRoyalOrder(kind,sector,{amount,type,region,source='king'}={}){
  if(!S.kingdom||S.player!==KINGDOM.id||!Object.hasOwn(ROYAL_COMPANIES,sector)||
    !Object.hasOwn(ROYAL_ORDER_ACTIONS,kind)||!['king','zayed'].includes(source))return false;
  const {council:government,industry}=S.kingdom;
- const isFunding=kind==='appropriate'||kind==='capitalize';
+ const isFunding=Object.hasOwn(ROYAL_FUNDING_ROUTES,kind);
  if(isFunding){
-  if(!royalFundingOrder(kind,sector,amount))return false;
+  amount=royalFundingOrder(kind,sector,amount);
+  if(!amount)return false;
  }else{
   if(!Object.hasOwn(INDUSTRIAL_SITES,type)||!KINGDOM_REGION_IDS.has(region)||
     INDUSTRIAL_SITES[type].ministry!==sector)return false;
@@ -150,7 +158,7 @@ function validateRoyalGovernment(kingdom,month){
     !Number.isInteger(order.month)||order.month<0||order.month>month||
     !Object.hasOwn(ROYAL_ORDER_ACTIONS,order.kind)||!Object.hasOwn(ROYAL_COMPANIES,order.sector)||
     !['king','zayed'].includes(order.source))fail();
-  if(order.kind==='appropriate'||order.kind==='capitalize'){
+  if(Object.hasOwn(ROYAL_FUNDING_ROUTES,order.kind)){
    if(!money(order.amount)||order.amount===0)fail();
   }else if(!Object.hasOwn(INDUSTRIAL_SITES,order.type)||!KINGDOM_REGION_IDS.has(order.region)||
     INDUSTRIAL_SITES[order.type].ministry!==order.sector)fail();
@@ -185,7 +193,9 @@ function royalCouncilPanel(n){
   +'<label for="royalOrderAmount">المبلغ بمليارات الدولارات</label>'
   +'<input id="royalOrderAmount" type="number" min="0" step="any" dir="ltr">'
   +'<div class="buttonrow"><button id="royalAppropriate">تخصيص من الخزينة</button>'
-  +'<button id="royalCapitalize">تمويل الشركة</button></div>'
+  +'<button id="royalCapitalize">تمويل الشركة</button>'
+  +'<button id="royalCompanyReturn">ردّ فائض الشركة إلى الوزارة</button>'
+  +'<button id="royalMinistryReturn">ردّ فائض الوزارة إلى الخزينة</button></div>'
   +royalSelect('royalOrderProject','منشأة الشركة',INDUSTRY_ORDER.map(type=>[type,INDUSTRIAL_SITES[type].label]))
   +royalSelect('royalOrderRegion','إقليم المشروع',KINGDOM_REGIONS.map(([id,name])=>[id,name]))
   +'<button id="royalConstruct" class="primary full">اعتماد إنشاء المنشأة</button></div>':'';
@@ -238,7 +248,8 @@ bindPanel=function(){
   renderPanel();
   toast('نُفّذ الأمر الملكي وسُجّل في الديوان.');
  };
- for(const [id,kind] of [['royalAppropriate','appropriate'],['royalCapitalize','capitalize']]){
+ for(const [id,kind] of [['royalAppropriate','appropriate'],['royalCapitalize','capitalize'],
+  ['royalCompanyReturn','companyReturn'],['royalMinistryReturn','ministryReturn']]){
   const button=panel.querySelector('#'+id);
   if(button)button.onclick=()=>issue(kind,$('royalOrderSector').value,{amount:Number($('royalOrderAmount').value)});
  }

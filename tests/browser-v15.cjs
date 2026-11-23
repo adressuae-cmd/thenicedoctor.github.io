@@ -160,6 +160,12 @@ async function main() {
     await kingdom.locator('#royalOrderRegion').selectOption('SAU');
     await kingdom.locator('#royalConstruct').click();
     await kingdom.locator('[data-council-site="steel:SAU"]').click();
+    await kingdom.locator('#royalOrderAmount').fill('0.02');
+    await kingdom.locator('#royalCompanyReturn').click();
+    await kingdom.locator('#royalOrderAmount').fill('0.05');
+    await kingdom.locator('#royalMinistryReturn').click();
+    assert(await kingdom.evaluate(() => S.kingdom.council.orders.slice(-2)
+      .map(order=>order.kind).join(',')==='companyReturn,ministryReturn'));
     assert(await kingdom.evaluate(() => S.kingdom.industry.facilities.some(f=>f.type==='steel'&&f.company==='industry'&&f.paused)));
     await kingdom.locator('#saveTop').click();
     await kingdom.reload();
@@ -173,8 +179,25 @@ async function main() {
     await kingdom.locator('#startLoad2').click();
     assert.equal(await kingdom.evaluate(() => S.month), 120);
     assert(await kingdom.evaluate(() => player().cities.find(city => city.id === 'PSE-0').levels.hospital === 1));
+    await kingdom.locator('[data-view="settings"]').click();
+    await kingdom.locator('[data-era="e1970"]').click();
+    await kingdom.getByRole('heading',{name:'بدء المملكة في ١٩٧٠؟',exact:true}).waitFor();
+    await kingdom.locator('#closeModal').click();
+    assert.equal(await kingdom.evaluate(() => S.month), 120);
+    await kingdom.locator('[data-era="e1970"]').click();
+    await kingdom.locator('#confirmEra').click();
+    assert.deepEqual(await kingdom.evaluate(() => ({
+      player:S.player, year:S.startYear, month:S.month, language:document.documentElement.lang,
+      regions:player().regions.length, companies:Object.keys(S.kingdom.council.companies).length,
+    })), {player:'UHK',year:1970,month:0,language:'ar',regions:28,companies:3});
+    assert.equal(await kingdom.evaluate(() => JSON.parse(localStorage.getItem('sovereign-save-v1')).startYear),2005);
+    const preset = await browser.newPage();
+    preset.on('pageerror',error=>errors.push(error.message));
+    await preset.goto(url);
+    await preset.locator('[data-kingdom-start="e1970"]').click();
+    assert.equal(await preset.evaluate(() => S.player+':'+S.startYear+':'+document.documentElement.lang),'UHK:1970:ar');
     assert.deepEqual(errors, []);
-    console.log('PASS: 120 browser months in both scenarios, map selection, city project, Arabic policy and accounts, royal orders, Zayed approvals and save imports.');
+    console.log('PASS: 120 browser months in both scenarios, map selection, city project, Arabic policy and accounts, royal orders, Zayed approvals, 1970 Kingdom restart and save imports.');
   } finally {
     try {
       await browser?.close();

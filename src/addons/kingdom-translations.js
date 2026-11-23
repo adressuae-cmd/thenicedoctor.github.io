@@ -986,3 +986,28 @@ function kingdomLegacySentence(text){
  }
  return text;
 }
+
+Object.assign(KINGDOM_LEGACY_LABELS,{
+ 'Start a new world?':'بدء عالم جديد؟',
+ 'Choose how demanding this world should be':'اختر مستوى صعوبة العالم',
+ 'Which country will you lead?':'أي دولة ستقود؟',
+ 'Start in 1970':'ابدأ في ١٩٧٠',
+ 'Start in 1985':'ابدأ في ١٩٨٥',
+ 'Start in 2000':'ابدأ في ٢٠٠٠',
+ 'Present day':'الحاضر',
+ 'Cold War':'الحرب الباردة',
+ 'Post-Cold War':'ما بعد الحرب الباردة',
+ 'Start on Easy':'ابدأ على المستوى السهل',
+ 'Start on Medium':'ابدأ على المستوى المتوسط',
+ 'Start on Hard':'ابدأ على المستوى الصعب',
+ 'National debt:':'الدين العام:',
+ 'Supply shocks:':'صدمات الإمداد:',
+ 'Rival nations:':'الدول المنافسة:',
+ 'switched off':'معطّل',
+ 'forgiving carrying costs':'تكاليف خدمة ميسّرة',
+ 'standard carrying costs':'تكاليف خدمة عادية',
+ 'normal':'عادية',
+ 'none':'لا توجد',
+ 'Era settings':'إعدادات الحقبة',
+ 'Trade openness':'الانفتاح التجاري'
+});

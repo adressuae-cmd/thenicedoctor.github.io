@@ -88,6 +88,31 @@ rep("""function economyPanel(n){const b=fiscal(n);return '<div class="block"><h3
     """function economyPanel(n){const b=fiscal(n);return '<div class="block"><h3>'+
     (S.kingdom?'الميزانية العامة والدين':'National accounts')+'</h3>""")
 
+# The historical presets must restart the selected Kingdom scenario without falling back to Brazil.
+era_start = s.index(" return '<h3>Starting era</h3>")
+era_end = s.index(" +'<div class=\"block\"></div><h3>Construction & building</h3>'", era_start)
+original_era_settings = s[era_start:era_end]
+rep(original_era_settings, " return (S.kingdom?kingdomEraSettings():" + original_era_settings.removeprefix(" return ") + ")\n")
+rep("b.onclick=()=>{const k=b.dataset.era;\n   modal(",
+    "b.onclick=()=>{const k=b.dataset.era;\n   if(S.kingdom)return confirmKingdomEra(k);\n   modal(")
+rep("if(e.target.id==='confirmReset'){wasPlaying=false;newGame();closeModal();render();}",
+    "if(e.target.id==='confirmReset'){if(S.kingdom)return startKingdom(S.startYear,S.startMonth,difficultyOf());"
+    "wasPlaying=false;newGame();closeModal();render();}")
+
+rep("const story=pick(eligible),[title,body]=story.make(n);",
+    "const story=pick(eligible),[title,body]=kingdomNewsStory(story,n,story.make(n));")
+rep("addEvent(title,n.id===S.player?body(n):n.name+': '+body(n).replace(",
+    "const bodyText=n.id===S.player?body(n):n.name+': '+body(n).replace(")
+rep("""'the country'),
+  good?'economy':'warning');};""",
+    """'the country');
+ const localized=kingdomShockStory(title,bodyText,n);
+ addEvent(...localized,good?'economy':'warning');};""")
+
+rep("  addEvent('Five years under review',\n",
+    "  if(S.kingdom)addEvent('مراجعة خمس سنوات',kingdomFiveYearReview(n),'dispatch');\n"
+    "  else addEvent('Five years under review',\n")
+
 # V12 attached its budget fit in render(). Opening the Ideologies tab only calls renderPanel(), which
 # rebinds the preset buttons without it, so in ordinary play the fit never ran. V15 attaches preset
 # funding in bindPanel, which every panel draw goes through; the render-level hook is retired so the
@@ -147,7 +172,7 @@ rep('<script id="world-data"', '<script type="application/json" id="kingdom-map"
     + kingdom_map + '</script>\n<script id="world-data"')
 addon = '\n'.join((SRC / 'addons' / name).read_text()
                   for name in ('v15-addon.js', 'kingdom-addon.js', 'kingdom-finance.js', 'kingdom-industry.js', 'kingdom-locale.js',
-                               'kingdom-government.js', 'kingdom-translations.js'))
+                               'kingdom-government.js', 'kingdom-translations.js', 'kingdom-news.js'))
 rep('newGame();initPaths();render();installMobileMap();startScreen();',
     addon + '\nwatchKingdomTranslations();newGame();initPaths();render();installMobileMap();startScreen();')
 
