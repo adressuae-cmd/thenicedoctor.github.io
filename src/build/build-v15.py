@@ -21,6 +21,97 @@ rep('<title>Sovereign V14 — Agencies &amp; Choose Your Country</title>',
     '<title>Sovereign V15 — Funded Budgets &amp; New Reforms</title>')
 rep('Political sandbox · V14</div>', 'Political sandbox · V15</div>')
 rep("s.version!==14", "s.version!==15")
+rep("()=>{closeModal();actions.load();}", "()=>actions.load()", count=2)
+# An era determines the starting partitions; the live world determines the drawn ones.
+rep("const replaced=new Set(Object.keys(partitionsFor()));",
+    "const replaced=new Set(Object.values(S.partitioned||{}).map(info=>info.parent));")
+
+
+# A province uses the Crown's fill, with an administrative seam in place of a national outline.
+rep("ctx.strokeStyle='#18262b';ctx.lineWidth=.7/t.scale;ctx.stroke(item.path);",
+    "const admin=S.kingdom&&KINGDOM_REGION_IDS.has(item.id);"
+    "ctx.strokeStyle=admin?'#b2a475':'#18262b';ctx.lineWidth=(admin?.45:.7)/t.scale;"
+    "ctx.setLineDash(admin?[2/t.scale,2/t.scale]:[]);ctx.stroke(item.path);ctx.setLineDash([]);")
+rep("if(territoryOwner(p.id)===id)ctx.stroke(p.path);",
+    "if(territoryOwner(p.id)===id&&!(S.kingdom&&id===KINGDOM.id&&KINGDOM_REGION_IDS.has(p.id)))ctx.stroke(p.path);")
+rep("(n.pop*c.share).toFixed(3)", "(n.pop*(c.populationShare??c.share)).toFixed(3)")
+rep("if(closest)return closest;ctx.save()",
+    "if(closest)return S.kingdom&&kingdomRegionAt(mx,my)?KINGDOM.id:closest;ctx.save()")
+rep("if(id)choose(id)}drag=null",
+    "if(id)selectMapNationKingdom(id,e.clientX-r.left,e.clientY-r.top)}drag=null")
+
+
+# Shared labels keep the same view IDs and actions in both languages.
+rep("dateText=()=>gameDate(S.month).toLocaleDateString('en',",
+    "dateText=()=>gameDate(S.month).toLocaleDateString(S.kingdom?'ar':'en',")
+rep("""title="'+l+'">'+icon(v)+'<span class="navlabel">'+l+'</span>""",
+    """title="'+kingdomLabel(l)+'">'+icon(v)+'<span class="navlabel">'+kingdomLabel(l)+'</span>""", count=2)
+for en in ('National output', 'Population', 'Public approval', 'Political capital'):
+    rep(f'<label>{en}</label>', "'+'<label>'+kingdomLabel('" + en + "')+'</label>'+'", count=s.count(f'<label>{en}</label>'))
+for original in (
+    "playing?'Pause simulation':'Play simulation'", "playing?'Simulation running':'Simulation paused'",
+    "n.approval>55?'Supportive':'Contested'", "infiniteCapital(n)?'Unlimited':'/ 100'",
+):
+    rep(original, f"kingdomLabel({original})", count=s.count(original))
+for message in ('World saved to this browser.',):
+    rep(f"toast('{message}')", f"toast(kingdomLabel('{message}'))")
+
+rep("owned?'Your nation':'Nation intelligence'", "kingdomLabel(owned?'Your nation':'Nation intelligence')")
+rep("""<select aria-label="Select nation" id="nationSelect">""",
+    """<select aria-label="'+kingdomLabel('Select nation')+'" id="nationSelect">""")
+rep("a.name.localeCompare(b.name)).map(c=>'<option",
+    "kingdomNationName(a).localeCompare(kingdomNationName(b),S.kingdom?'ar':undefined)).map(c=>'<option")
+rep("+'>'+c.name+'</option>'", "+'>'+escapeHTML(kingdomNationName(c))+'</option>'")
+rep("""<h2>'+escapeHTML(n.name)+'</h2>""", """<h2>'+escapeHTML(kingdomNationName(n))+'</h2>""")
+rep("""+'">'+label+'</button>').join('')+'</div>';$('nationSelect')""",
+    """+'">'+kingdomLabel(label)+'</button>').join('')+'</div>';$('nationSelect')""")
+rep("'Playing as '+n.name+' · '+(playing?'Time is advancing':'Time is paused')",
+    "kingdomLabel('Playing as ')+kingdomNationName(n)+' · '+kingdomLabel(playing?'Time is advancing':'Time is paused')")
+rep("n.name.toUpperCase()", "kingdomNationName(n).toUpperCase()")
+
+rep("""<span>'+x.name+'</span><output id="o-""",
+    """<span>'+kingdomPolicyText(x,'name')+'</span><output id="o-""")
+rep("<small>'+x.desc+'</small>", "<small>'+kingdomPolicyText(x,'description')+'</small>")
+rep("""<div class="policylive"><span>Current: '+""",
+    """<div class="policylive"><span>'+kingdomLabel('Current:')+' '+""")
+rep("""+'</span><span>Target: '+n.targets[x.key]""",
+    """+'</span><span>'+kingdomLabel('Target:')+' '+n.targets[x.key]""")
+
+rep("escapeHTML(e.title)", "escapeHTML(kingdomLabel(e.title))", count=2)
+rep("escapeHTML(e.body)", "escapeHTML(kingdomLabel(e.body))")
+rep("escapeHTML(e.body.slice(0,95))", "escapeHTML(kingdomLabel(e.body).slice(0,95))")
+rep("gameDate(e.month).toLocaleDateString('en',",
+    "gameDate(e.month).toLocaleDateString(S.kingdom?'ar':'en',", count=2)
+rep("function toast(s){$('toast').textContent=s;", "function toast(s){$('toast').textContent=kingdomLabel(s);")
+
+rep("""function economyPanel(n){const b=fiscal(n);return '<div class="block"><h3>National accounts</h3>""",
+    """function economyPanel(n){const b=fiscal(n);return '<div class="block"><h3>'+
+    (S.kingdom?'الميزانية العامة والدين':'National accounts')+'</h3>""")
+
+# The historical presets must restart the selected Kingdom scenario without falling back to Brazil.
+era_start = s.index(" return '<h3>Starting era</h3>")
+era_end = s.index(" +'<div class=\"block\"></div><h3>Construction & building</h3>'", era_start)
+original_era_settings = s[era_start:era_end]
+rep(original_era_settings, " return (S.kingdom?kingdomEraSettings():" + original_era_settings.removeprefix(" return ") + ")\n")
+rep("b.onclick=()=>{const k=b.dataset.era;\n   modal(",
+    "b.onclick=()=>{const k=b.dataset.era;\n   if(S.kingdom)return confirmKingdomEra(k);\n   modal(")
+rep("if(e.target.id==='confirmReset'){wasPlaying=false;newGame();closeModal();render();}",
+    "if(e.target.id==='confirmReset'){if(S.kingdom)return startKingdom(S.startYear,S.startMonth,difficultyOf());"
+    "wasPlaying=false;newGame();closeModal();render();}")
+
+rep("const story=pick(eligible),[title,body]=story.make(n);",
+    "const story=pick(eligible),[title,body]=kingdomNewsStory(story,n,story.make(n));")
+rep("addEvent(title,n.id===S.player?body(n):n.name+': '+body(n).replace(",
+    "const bodyText=n.id===S.player?body(n):n.name+': '+body(n).replace(")
+rep("""'the country'),
+  good?'economy':'warning');};""",
+    """'the country');
+ const localized=kingdomShockStory(title,bodyText,n);
+ addEvent(...localized,good?'economy':'warning');};""")
+
+rep("  addEvent('Five years under review',\n",
+    "  if(S.kingdom)addEvent('مراجعة خمس سنوات',kingdomFiveYearReview(n),'dispatch');\n"
+    "  else addEvent('Five years under review',\n")
 
 # V12 attached its budget fit in render(). Opening the Ideologies tab only calls renderPanel(), which
 # rebinds the preset buttons without it, so in ordinary play the fit never ran. V15 attaches preset
@@ -76,9 +167,14 @@ css = '''
 '''
 rep('</style>', css + '\n</style>')
 
-addon = (SRC / 'addons' / 'v15-addon.js').read_text()
+kingdom_map = (SRC / 'data' / 'kingdom-map-supplement.json').read_text().strip()
+rep('<script id="world-data"', '<script type="application/json" id="kingdom-map">'
+    + kingdom_map + '</script>\n<script id="world-data"')
+addon = '\n'.join((SRC / 'addons' / name).read_text()
+                  for name in ('v15-addon.js', 'kingdom-addon.js', 'kingdom-finance.js', 'kingdom-industry.js', 'kingdom-locale.js',
+                               'kingdom-government.js', 'kingdom-translations.js', 'kingdom-news.js'))
 rep('newGame();initPaths();render();installMobileMap();startScreen();',
-    addon + '\nnewGame();initPaths();render();installMobileMap();startScreen();')
+    addon + '\nwatchKingdomTranslations();newGame();initPaths();render();installMobileMap();startScreen();')
 
 (BUILD / 'v15.html').write_text(s)
 (BUILD / 'v15-engine.js').write_text(re.findall(r'<script>([\s\S]*?)</script>', s)[-1])

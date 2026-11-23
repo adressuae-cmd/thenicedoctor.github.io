@@ -8,16 +8,272 @@ const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
 function makeGame(file){const html=fs.readFileSync(file,'utf8');
  const embedded=id=>{const m=html.match(new RegExp('<script type="application/json" id="'+id+'">([\\s\\S]*?)<\\/script>'));return m?m[1]:'';};
  const data={'world-data':html.match(/<script id="world-data" type="application\/json">([\s\S]*?)<\/script>/)[1],
-  'city-catalog':embedded('city-catalog'),'added-countries':embedded('added-countries'),'split-polygons':embedded('split-polygons'),'borders':embedded('borders')};
+  'city-catalog':embedded('city-catalog'),'added-countries':embedded('added-countries'),'split-polygons':embedded('split-polygons'),'borders':embedded('borders'),'kingdom-map':embedded('kingdom-map')};
  const code=html.match(/<script>([\s\S]*?)<\/script>/)[1],els=new Map(),registry=new Map(),store=new Map();
  const ctx2d=new Proxy({isPointInPath:()=>false},{get:(t,k)=>t[k]||(()=>{}),set:(t,k,v)=>(t[k]=v,true)});
  function el(id=''){if(els.has(id))return els.get(id);const e={id,innerHTML:'',textContent:data[id]||'',value:id==='mapmode'?'political':'',hidden:id==='overlay',style:{},dataset:{},classList:{toggle(){}},tagName:'DIV',scrollTop:0,addEventListener(){},setAttribute(){},querySelector(){return null},querySelectorAll(){return[]},getBoundingClientRect(){return{width:1100,height:650,left:0,top:0}},getContext(){return ctx2d},insertAdjacentHTML(_,s){this.innerHTML=s+this.innerHTML},focus(){},click(){},scrollIntoView(){},setPointerCapture(){}};els.set(id,e);return e;}
- const scope={console,performance,structuredClone,TextEncoder,Blob,URL,innerWidth:1440,devicePixelRatio:1,Path2D:class{moveTo(){}lineTo(){}closePath(){}},ResizeObserver:class{observe(){}},requestAnimationFrame:()=>1,setTimeout:()=>1,clearTimeout(){},setInterval:()=>1,clearInterval(){},AbortController,localStorage:{getItem:k=>store.get(k)??null,setItem(k,v){store.set(k,v)}},document:{hidden:false,modelContext:{registerTool(t){registry.set(t.name,t)}},activeElement:el('body'),getElementById:el,querySelectorAll:()=>[],addEventListener(){},createElement:()=>el('created')},window:{addEventListener(){}}};
+ const scope={console,performance,structuredClone,TextEncoder,Blob,URL,innerWidth:1440,devicePixelRatio:1,Path2D:class{moveTo(){}lineTo(){}closePath(){}},ResizeObserver:class{observe(){}},requestAnimationFrame:()=>1,setTimeout:()=>1,clearTimeout(){},setInterval:()=>1,clearInterval(){},AbortController,localStorage:{getItem:k=>store.get(k)??null,setItem(k,v){store.set(k,v)}},document:{hidden:false,modelContext:{registerTool(t){registry.set(t.name,t)}},activeElement:el('body'),getElementById:el,querySelectorAll:()=>[],addEventListener(){},createElement:()=>el('created')},addEventListener(){}};
+ scope.window=scope;
  vm.createContext(scope);vm.runInContext(code,scope);return{run:c=>vm.runInContext(c,scope),scope,registry,els,html};}
 // harness:end
 
 const v15=makeGame('build/v15.html'),{run}=v15;
 run('renderTick=()=>{}');
+// node-only:start
+// Browser storage survives a fresh page, including the historic map and deterministic clock.
+{
+ const prior=makeGame('build/v15.html');
+ prior.run("applyDifficulty('medium',true);applyEra('e1970');beginAsV14('JOR');closeModal()");
+ for(let month=1;month<=11;month++){
+  prior.run("$('step').onclick()");
+  assert.equal(prior.run('S.month'), month);
+ }
+ prior.run("S.options.infiniteCapital=true;rolloutV15('hospital');$('saveTop').onclick()");
+ const saved=prior.run("localStorage.getItem('sovereign-save-v1')");
+ assert.equal(JSON.parse(saved).month,11);
+ assert(JSON.parse(saved).nations.find(n=>n.id==='JOR').cities.some(c=>c.queue.some(q=>q.type==='hospital')));
+ prior.run("$('step').onclick()");
+ const month12=prior.run('JSON.stringify(S)');
+
+ const restored=makeGame('build/v15.html');
+ assert.equal(restored.run('CITY_CATALOG.SUN'),undefined);
+ restored.scope.saved=saved;
+ restored.run("localStorage.setItem('sovereign-save-v1',saved);startScreen();$('startLoad2').onclick()");
+ assert(restored.run('JSON.stringify(S)')===saved,'saved state is restored exactly');
+ assert(restored.run("!playing&&$('overlay').hidden&&selected==='JOR'"));
+ assert(restored.run('Object.keys(SPLIT_PATHS).length===6&&paths.length>0&&NEIGHBOURS.size>0'));
+ restored.run("$('step').onclick()");
+ assert(restored.run('JSON.stringify(S)')===month12,'month 12 is deterministic after reload');
+ assert.equal(restored.run('gameDate(S.month).getUTCFullYear()'),1971);
+ assert.equal(restored.run('gameDate(S.month).getUTCMonth()'),0);
+ for(let month=13;month<=120;month++){
+  restored.run("$('step').onclick()");
+  assert.equal(restored.run('S.month'),month);
+  assert(restored.run('S.nations.every(n=>Number.isFinite(n.gdp)&&n.gdp>0&&Number.isFinite(n.debt))'));
+ }
+ assert.equal(restored.run('gameDate(S.month).getUTCFullYear()'),1980);
+ assert(restored.run("paths.some(path=>path.id==='VNM')&&!SPLIT_PATHS.VNN&&!SPLIT_PATHS.VNS"),
+  'Vietnam returns to the map when the historic clock reunifies it');
+ restored.run("$('saveTop').onclick();actions.load()");
+ assert.equal(restored.run('S.month'),120);
+ assert(restored.run("player().cities.some(c=>c.levels.hospital>0)"));
+
+ const before=restored.run('JSON.stringify(S)');
+ const catalogue=restored.run('JSON.stringify(CITY_CATALOG)');
+ assert.throws(()=>restored.run("loadSave(JSON.stringify({...S,player:'RUS'}))"),/player country is missing/);
+ assert.equal(restored.run('JSON.stringify(S)'),before);
+ assert.equal(restored.run('JSON.stringify(CITY_CATALOG)'),catalogue);
+ restored.run("localStorage.setItem('sovereign-save-v1','invalid');startScreen();$('startLoad2').onclick()");
+ assert.equal(restored.run('JSON.stringify(S)'),before);
+ assert.equal(restored.run("$('overlay').hidden"),false);
+ console.log('PASS: 120 monthly steps, year rollover, saved projects, fresh-page restoration and rejected imports');
+}
+
+
+// The Crown replaces its constituents while the administrative data remains in one save.
+{
+ const game=makeGame('build/v15.html');
+ const runKingdom=game.run;
+ const totals=runKingdom(`applyDifficulty('medium',true);(()=>{
+  const regions=KINGDOM_REGIONS.map(([id])=>nation(id));
+  return Object.fromEntries(['pop','gdp','debt','fund','military'].map(key=>
+   [key,regions.reduce((sum,n)=>sum+n[key],0)]));
+ })()`);
+ const cityIds=runKingdom('KINGDOM_REGIONS.flatMap(([id])=>nation(id).cities.map(c=>c.id))');
+ runKingdom("startScreen();$('kingdomStartMonth').value='1990-01';$('startKingdom').onclick()");
+ assert.equal(runKingdom('S.player'),'UHK');
+ assert.equal(runKingdom('gameDate(0).toISOString()'),'1990-01-01T00:00:00.000Z');
+ assert.equal(runKingdom('player().regions.length'),28);
+ assert.equal(runKingdom('S.nations.length'),177);
+ for(const [key,expected] of Object.entries(totals)){
+  assert(Math.abs(runKingdom(`player()[${JSON.stringify(key)}]`)-expected)<1e-8,key+' is conserved');
+ }
+ assert.deepEqual(Array.from(runKingdom('player().cities.map(c=>c.id)')),Array.from(cityIds));
+ assert(runKingdom("player().cities.some(city=>city.name==='يثرب')"));
+ assert(runKingdom("KINGDOM_REGIONS.every(([id])=>!nation(id)&&territoryOwner(id)==='UHK'&&paths.some(path=>path.id===id))"));
+ assert(runKingdom("NEIGHBOURS.get('UHK').has('CHN')&&shareBorder('UHK','CHN')&&!shareBorder('UHK','JOR')"));
+ assert(runKingdom("!S.tradeDeals.some(deal=>KINGDOM_REGION_IDS.has(deal.from)||KINGDOM_REGION_IDS.has(deal.to))"));
+ runKingdom("validSave(JSON.parse(JSON.stringify(S)))");
+
+ runKingdom("S.options.infiniteCapital=true;setRelation('UHK','CHN',65)");
+ assert.equal(runKingdom("signTrade('CHN','import','energy',1)"),true);
+ runKingdom("$('step').onclick()");
+ assert(runKingdom('S.tradeFlows[0].value>0&&player().imports>0&&player().customs>0'));
+ assert(runKingdom('S.kingdom.treasury.last.borrowing>0&&S.kingdom.treasury.last.unfunded===0'));
+ runKingdom("S.options.debtPaused=true;$('step').onclick()");
+ assert(runKingdom('S.kingdom.treasury.last.borrowing===0&&S.kingdom.treasury.last.interest===0'));
+ runKingdom("validSave(JSON.parse(JSON.stringify(S)));startKingdom(1990,0)");
+
+ runKingdom(`
+  S.options.freeReforms=true;S.options.fastReforms=true;
+  enact({...player().targets,taxMode:'simple',tax:55,sovereignFund:5});
+  $('step').onclick();
+ `);
+ assert(runKingdom('S.kingdom.treasury.cash>0&&player().fund===0'),'surpluses stay in the treasury');
+ const cash=runKingdom('S.kingdom.treasury.cash');
+ game.scope.deposit=cash/2;
+ assert.equal(runKingdom("transferKingdomFunds('deposit',deposit)"),true);
+ assert.equal(runKingdom("transferKingdomFunds('deposit',deposit*2)"),false);
+ assert.equal(runKingdom('S.kingdom.treasury.cash+player().fund'),cash);
+ runKingdom("for(let i=1;i<11;i++)$('step').onclick();$('saveTop').onclick()");
+ assert(runKingdom('player().fund>deposit&&player().fund<deposit*1.04'),'only investment return accrues');
+ const checkpoint=runKingdom("localStorage.getItem('sovereign-save-v1')");
+ const reloaded=makeGame('build/v15.html');
+ reloaded.scope.checkpoint=checkpoint;
+ reloaded.run('loadSave(checkpoint)');
+ assert(reloaded.run('JSON.stringify(S)')===checkpoint,'kingdom, regional data and both balances round-trip');
+ for(const mutation of [
+  "broken.territory.PSE='ISR'",
+  "broken.nations.find(n=>n.id==='UHK').regions.pop()",
+  "broken.kingdom.treasury.cash=-1",
+  "broken.kingdom.treasury.last.revenue+=100",
+  "broken.relations['ISR:PSE']=20",
+ ]){
+  assert.throws(()=>reloaded.run(`{const broken=JSON.parse(checkpoint);${mutation};loadSave(JSON.stringify(broken));}`));
+  assert(reloaded.run('JSON.stringify(S)')===checkpoint,'rejected data leaves the live kingdom intact');
+ }
+ runKingdom("$('step').onclick()");
+ reloaded.run("$('step').onclick()");
+ assert(reloaded.run('JSON.stringify(S)')===runKingdom('JSON.stringify(S)'),'consolidated clock stays deterministic');
+ assert.equal(reloaded.run('gameDate(S.month).toISOString()'),'1991-01-01T00:00:00.000Z');
+ reloaded.run("for(let i=12;i<120;i++)$('step').onclick()");
+ assert.equal(reloaded.run('gameDate(S.month).toISOString()'),'2000-01-01T00:00:00.000Z');
+ assert(reloaded.run("KINGDOM_REGIONS.every(([id])=>!nation(id)&&territoryOwner(id)==='UHK')"));
+ assert(reloaded.run('S.nations.every(n=>Number.isFinite(n.gdp)&&Number.isFinite(n.debt))'));
+ reloaded.run('validSave(JSON.parse(JSON.stringify(S)))');
+ console.log('PASS: kingdom integration, 28 administrative regions, consolidated balances and 120 months');
+}
+// Industrial orders preserve construction, material balances and treasury cash.
+{
+ const game=makeGame('build/v15.html'),r=game.run;
+ r("startKingdom(1985,3)");
+ assert.equal(r('gameDate(0).toISOString()'),'1985-04-01T00:00:00.000Z');
+ assert.equal(r("startKingdom(1799,0)"),false);
+ assert.equal(r('player().regions.length'),28);
+ assert.equal(r("approveRoyalFacility('oil','SAU')"),false,'construction requires treasury cash');
+ r(`S.options.freeReforms=true;S.options.fastReforms=true;
+  enact({...player().targets,taxMode:'simple',tax:55});$('step').onclick();`);
+ assert.equal(r("approveRoyalFacility('oil','BRA')"),false,'construction is restricted to the kingdom');
+ r("window.cashBefore=S.kingdom.treasury.cash");
+ assert.equal(r("approveRoyalFacility('refinery','SAU')"),true);
+ assert(r('Math.abs(S.kingdom.treasury.cash-cashBefore+INDUSTRIAL_SITES.refinery.capital)<1e-9'));
+ assert.equal(r("approveRoyalFacility('refinery','SAU')"),false,'duplicate approvals are atomic');
+ r("for(let i=0;i<4;i++)$('step').onclick()");
+ assert.equal(r('S.kingdom.industry.last.runs[0].output'),0,'refinery lacks electricity and inputs');
+ assert.deepEqual(Array.from(r('S.kingdom.industry.last.runs[0].constraints')),['feedstock','power']);
+ assert(r("economyPanel(player()).includes('المواد الخام، الكهرباء')"));
+ assert.deepEqual(Array.from(r("royalProjectDependencies('steel')")),['خام الحديد','الكهرباء']);
+ assert(!r("zayedRecommendations('SAU').find(p=>p.sector==='industry').ready"));
+ for(const [type,region] of [['oil','JOR'],['gas','QAT'],['mine','MRT'],['power','SAU'],['steel','SAU'],['copper','LBN'],['bauxite','TUN'],['phosphate','BHR'],['gold','JOR']]){
+  if(type==='steel'){
+   assert.deepEqual(Array.from(r("royalProjectDependencies('steel')")),[],'planned supply can be commissioned on time');
+   r("S.kingdom.industry.facilities.find(site=>site.type==='gas').paused=true");
+   assert.deepEqual(Array.from(r("royalProjectDependencies('steel')")),['الكهرباء','الغاز الطبيعي']);
+   r("delete S.kingdom.industry.facilities.find(site=>site.type==='gas').paused");
+  }
+  assert(r(`approveRoyalFacility('${type}','${region}')`));
+ }
+ r("for(let i=0;i<5;i++)$('step').onclick()");
+ assert(r(`S.kingdom.industry.last.runs.every(site=>site.output>0)&&
+  S.kingdom.industry.last.powerUsed<=S.kingdom.industry.last.generated&&
+  S.kingdom.industry.last.sales.steel.quantity>0&&
+  S.kingdom.industry.last.sales.gold.quantity>0`));
+ assert(r(`Math.abs(S.kingdom.treasury.cash-S.kingdom.treasury.last.closing
+  +S.kingdom.industry.last.spent-S.kingdom.industry.last.revenue)<1e-8`));
+ const checkpoint=r('JSON.stringify(S)');
+ const fresh=makeGame('build/v15.html');
+ fresh.scope.checkpoint=checkpoint;
+ fresh.run('loadSave(checkpoint)');
+ assert(fresh.run('JSON.stringify(S)')===checkpoint);
+ r("$('step').onclick()");
+ fresh.run("$('step').onclick()");
+ assert(fresh.run('JSON.stringify(S)')===r('JSON.stringify(S)'),'production continues deterministically');
+ game.scope.checkpoint=checkpoint;
+ assert(r(`(()=>{
+  const {stock,last}=S.kingdom.industry;
+  const balances=JSON.parse(checkpoint).kingdom.industry.stock;
+  for(const run of last.runs){
+   const spec=INDUSTRIAL_SITES[run.type];
+   if(spec.good)balances[spec.good]+=run.output;
+   if(spec.input)balances[spec.input[0]]-=spec.input[1]*run.output/spec.output;
+  }
+  return Object.keys(stock).every(good=>Math.abs(balances[good]-last.sales[good].quantity-stock[good])<1e-8);
+ })()`),'inventories reconcile with production, consumption and sales');
+ fresh.run("while(S.month<120)$('step').onclick()");
+ assert(fresh.run(`S.month===120&&player().fund===0&&
+  Object.values(S.kingdom.industry.stock).every(stock=>Number.isFinite(stock)&&stock>=0)`),
+  'industry survives a decade without crediting the sovereign fund');
+ assert(fresh.run(`S.kingdom.industry.last.runs.find(site=>site.type==='oil').output>0&&
+  !Object.hasOwn(S.kingdom.industry,'reserves')`),'extraction still operates without a depleting reserve');
+ fresh.run("validSave(JSON.parse(JSON.stringify(S)))");
+ fresh.run(`{
+  const older=JSON.parse(checkpoint),industry=older.kingdom.industry;
+  industry.reserves={oil:{SAU:0}};
+  industry.facilities=industry.facilities.filter(site=>!['copper','bauxite','phosphate','gold'].includes(site.type));
+  industry.last.runs=industry.last.runs.filter(site=>industry.facilities.some(f=>f.type===site.type&&f.region===site.region));
+  for(const key of ['copper','bauxite','phosphate','gold']){delete industry.stock[key];delete industry.last.sales[key];}
+  loadSave(JSON.stringify(older));
+ }`);
+ assert(fresh.run("!Object.hasOwn(S.kingdom.industry,'reserves')&&S.kingdom.industry.stock.gold===0&&S.kingdom.industry.facilities.length===6"));
+ assert.throws(()=>fresh.run("let malformed=JSON.parse(checkpoint);malformed.kingdom.industry.stock.oil=-1;loadSave(JSON.stringify(malformed))"));
+ fresh.run("let legacy=JSON.parse(checkpoint);delete legacy.kingdom.industry;loadSave(JSON.stringify(legacy))");
+ assert.equal(fresh.run('S.kingdom.industry.facilities.length'),0,'old kingdom saves gain an empty industry');
+ assert(fresh.run("!/[A-Za-z]/.test(dateText())&&kingdomLabel('Economy')==='الاقتصاد'"));
+ console.log('PASS: industrial finance, input and power constraints, facilities, production and save migration');
+}
+// The council moves actual funds; Zayed's delegates never act without approval.
+{
+ const game=makeGame('build/v15.html'),r=game.run;
+ r("startKingdom(2005,6);S.options.freeReforms=true;S.options.fastReforms=true;enact({...player().targets,taxMode:'simple',tax:55});$('step').onclick()");
+ const opening=r('S.kingdom.treasury.cash');
+ assert(opening>.35);
+ assert(r("STORIES.every(story=>Object.hasOwn(KINGDOM_NEWS,story.key))"));
+ assert(r("SHOCK_GOOD.concat(SHOCK_BAD).every(([title])=>Object.hasOwn(KINGDOM_SHOCK_NEWS,title))"));
+ assert.deepEqual(Array.from(r("kingdomNewsStory({key:'steady'},player(),['old','story']).map(text=>/[؀-ۿ]/.test(text))")),[true,true]);
+
+ assert(r("POLICY.every(p=>/[؀-ۿ]/.test(kingdomPolicyText(p,'name'))&&/[؀-ۿ]/.test(kingdomPolicyText(p,'description')))"));
+ assert(r("kingdomLabel('No projects queued.')==='لا توجد مشاريع في قائمة الانتظار.'"));
+ assert(!r("executeRoyalOrder('capitalize','energy',{amount:.2})"));
+ game.scope.opening=opening;
+ const proposal=r("JSON.stringify(zayedRecommendations('SAU').find(p=>p.sector==='energy'))");
+ assert.equal(JSON.parse(proposal).kind,'appropriate');
+ assert.equal(r('S.kingdom.council.orders.length'),0,'advice has no independent side effects');
+ assert(r("executeRoyalOrder('appropriate','energy',{amount:.35})"));
+ assert(r("executeRoyalOrder('capitalize','energy',{amount:.3})"));
+ assert(r("Math.abs(S.kingdom.treasury.cash-(opening-.35))<1e-9"));
+ assert(r("Math.abs(S.kingdom.council.ministries.energy.cash-.05)<1e-9"));
+ assert(r("executeRoyalOrder('companyReturn','energy',{amount:.05})"));
+ assert(r("executeRoyalOrder('ministryReturn','energy',{amount:.1})"));
+ assert(!r("executeRoyalOrder('companyReturn','energy',{amount:4})"));
+ assert(r("Math.abs(S.kingdom.treasury.cash-(opening-.25))<1e-9&&Math.abs(S.kingdom.council.companies.energy.cash-.25)<1e-9"));
+ assert(r("executeRoyalOrder('construct','energy',{type:'oil',region:'SAU',source:'zayed'})"));
+ assert(!r("executeRoyalOrder('construct','mining',{type:'oil',region:'JOR'})"));
+ assert(!r("executeRoyalOrder('construct','energy',{type:'oil',region:'SAU'})"));
+ r("for(let i=0;i<3;i++)$('step').onclick()");
+ assert(r("S.kingdom.council.companies.energy.revenue>0&&S.kingdom.council.companies.energy.operating>0"));
+ assert.equal(r('S.kingdom.industry.last.revenue'),0,'a company sale is not credited to the treasury a second time');
+ assert(r("executeRoyalOrder('suspend','energy',{type:'oil',region:'SAU'})"));
+ r("$('step').onclick()");
+ assert.deepEqual(Array.from(r('S.kingdom.industry.last.runs')),[]);
+ const checkpoint=r('JSON.stringify(S)');
+ const fresh=makeGame('build/v15.html');
+ fresh.scope.checkpoint=checkpoint;
+ fresh.run('loadSave(checkpoint)');
+ assert(fresh.run('JSON.stringify(S)')===checkpoint);
+ assert(fresh.run("executeRoyalOrder('resume','energy',{type:'oil',region:'SAU'})"));
+ fresh.run("$('step').onclick()");
+ assert(fresh.run('S.kingdom.industry.last.runs[0].output>0&&S.kingdom.council.orders.some(o=>o.source==="zayed")'));
+ assert(fresh.run("approveRoyalFacility('gas','QAT')"));
+ const preTransfer=fresh.run('S.kingdom.treasury.cash');
+ assert(fresh.run("executeRoyalOrder('transfer','energy',{type:'gas',region:'QAT'})"));
+ assert.equal(fresh.run('S.kingdom.treasury.cash'),preTransfer,'ownership transfers do not charge construction again');
+ assert(fresh.run("S.kingdom.industry.facilities.find(site=>site.type==='gas').company==='energy'"));
+ assert.throws(()=>fresh.run("const badCouncil=JSON.parse(checkpoint);badCouncil.kingdom.council.companies.energy.cash=-1;loadSave(JSON.stringify(badCouncil))"));
+ fresh.run("const oldCouncil=JSON.parse(checkpoint);oldCouncil.kingdom.industry.facilities=[];delete oldCouncil.kingdom.council;loadSave(JSON.stringify(oldCouncil))");
+ assert.equal(fresh.run('S.kingdom.council.orders.length'),0);
+ console.log('PASS: ministries, independent company cash, royal orders, Zayed approval and save migration');
+}
+// node-only:end
 
 // ---- V6 boots into Easy, which is a world with no national debt at all.
 assert.equal(run('S.version'),15);
@@ -755,15 +1011,33 @@ run('validSave(JSON.parse(JSON.stringify(S)))');
 
 // ---- V15: ideology presets pay for themselves.
 // V12 attached its budget fit in render(), but opening the Ideologies tab only calls renderPanel(),
-// so in play the fit never ran. The clicked path is DOM behaviour and is verified in a real browser;
-// here the funding function is exercised directly, and the retired hook is confirmed gone.
-assert(run("!render.toString().includes('fitToBudgetV12')"), 'the render-level preset hook is retired');
-assert(run("bindPanel.toString().includes('fundPresetV15')"), 'presets are funded where every panel draw binds');
+// so test the bound preset button after opening the panel as well as the funding calculation.
 run("newGame();applyDifficulty('medium',true);S.options.infiniteCapital=true");
 assert.equal(run('S.options.budgetFitPresets'), true, 'funded presets are on by default');
 run(`window.stageV15=(name)=>{const before={...player().targets},staged={...before,...PRESETS[name]};delete staged.desc;
  for(const k of ['taxMode',...TAX_KEYS,'housing','rentAid','zoning','transit','childcare'])staged[k]=before[k];
  return {before,staged,funded:fundPresetV15(staged,player(),before,name)};}`);
+// node-only:start
+for(const enabled of [true,false]){
+ const matches=run(`(()=>{
+  newGame();applyDifficulty('medium',true);view='policies';subview='ideologies';
+  S.options.budgetFitPresets=${enabled};
+  const button={dataset:{preset:'Democratic socialist'}};
+  const panel=$('panel'),query=panel.querySelectorAll;
+  panel.querySelectorAll=selector=>selector==='[data-preset]'&&subview==='ideologies'?[button]:query(selector);
+  try{
+   const expected=stageV15(button.dataset.preset);
+   renderPanel();
+   button.onclick();
+   const policy=${enabled}?expected.funded:expected.staged;
+   return draft.tax===policy.tax&&draft.otherTax===policy.otherTax;
+  }finally{
+   panel.querySelectorAll=query;
+  }
+ })()`);
+ assert(matches, 'preset buttons honor funding='+enabled+' when only the panel was drawn');
+}
+// node-only:end
 for (const name of Object.keys(JSON.parse(run('JSON.stringify(PRESETS)')))) {
  run(`window.pv=stageV15(${JSON.stringify(name)})`);
  assert(run('fiscal(player(),window.pv.funded).balance>=Math.max(fiscal(player(),window.pv.before).balance,startBalanceV15())-.6'),

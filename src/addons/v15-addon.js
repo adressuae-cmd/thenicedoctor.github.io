@@ -302,12 +302,16 @@ tickHistoryV12=function(){
  v14TickHistoryV15();
  for(const n of S.nations){
   ensureReformsV15(n);
+  n.unrest??=0;
   if(n.budgetSeededV15)continue;
   if(n.id===S.player)n.budgetSeededV15=true;else seedBudgetV15(n);}};
 const v14ApplyHistoryV15=applyHistoryV8;
 applyHistoryV8=function(key){
  v14ApplyHistoryV15(key);
- for(const n of S.nations)ensureReformsV15(n);};
+ for(const n of S.nations){
+  ensureReformsV15(n);
+  n.unrest??=0;
+ }};
 const v14MigrateV15=migrateSave;
 migrateSave=function(s){
  s=v14MigrateV15(s);
@@ -321,6 +325,7 @@ migrateSave=function(s){
 const v14ValidSaveV15=validSave;
 validSave=function(s){
  v14ValidSaveV15(s);
+ if(!s.nations.some(n=>n.id===s.player))throw Error('The player country is missing from this world.');
  for(const n of s.nations){
   if(n.budgetSeededV15!==undefined&&typeof n.budgetSeededV15!=='boolean')throw Error('Invalid budget seeding flag.');
   if(n.ruleNoticeV15!==undefined&&(!Number.isFinite(n.ruleNoticeV15)||n.ruleNoticeV15<0||n.ruleNoticeV15>12))throw Error('Invalid fiscal rule notice.');}
@@ -339,3 +344,65 @@ showGuide=function(){
  +'drug policy, and a fiscal rule that raises taxes automatically while the deficit is above a ceiling you choose.</p>'
  +'<p><b>Build in all cities</b> from the Cities tab: one national decision queues a development in every city that '
  +'can take it, for less political capital than approving each one.</p></div>');};
+
+// A fresh browser has only the modern catalogue. Historic maps and conquered cities
+// need their source catalogues before validation, and their derived map caches after it.
+const baseCityCatalogV15={...CITY_CATALOG};
+
+function prepareCityCatalogV15(){
+ for(const id of Object.keys(CITY_CATALOG))delete CITY_CATALOG[id];
+ Object.assign(CITY_CATALOG,baseCityCatalogV15);
+ for(const {merge} of Object.values(HISTORY)){
+  for(const [id,spec] of Object.entries(merge)){
+   CITY_CATALOG[id]={name:spec.name,cities:mergeCities(spec.members),kind:'city',iso2:null,flag:'🌐'};
+  }
+ }
+ for(const partitions of Object.values(PARTITIONS)){
+  for(const [parent,config] of Object.entries(partitions)){
+   for(const half of ['left','right']){
+    const {id,name}=SPLITS[parent][half];
+    CITY_CATALOG[id]={name,cities:config[half].cities,kind:'city',iso2:null,flag:'🌐'};
+   }
+  }
+ }
+}
+
+loadSave=function(text){
+ let parsed;
+ const previousCatalog={...CITY_CATALOG};
+ try{
+  parsed=JSON.parse(text);
+  prepareCityCatalogV15();
+  if(parsed?.kingdom){
+   registerKingdomCities();
+   parsed.kingdom.industry=migrateRoyalIndustry(parsed.kingdom.industry);
+   if(parsed.kingdom.council===undefined)parsed.kingdom.council=emptyRoyalGovernment();
+  }
+  parsed=migrateSave(parsed);
+  validSave(parsed);
+ }catch(error){
+  for(const id of Object.keys(CITY_CATALOG))delete CITY_CATALOG[id];
+  Object.assign(CITY_CATALOG,previousCatalog);
+  throw error;
+ }
+ startPause(false);
+ wasPlaying=false;
+ if(!$('overlay').hidden)closeModal();
+ S=parsed;
+ selected=S.player;
+ draft=null;
+ dirty=false;
+ cityDraftId=null;
+ activeCity=0;
+ SPLIT_PATHS={};
+ for(const [parent,definition] of Object.entries(SPLITS)){
+  for(const half of ['left','right']){
+   const {id,polygons}=definition[half];
+   if(S.partitioned[id]?.parent===parent)SPLIT_PATHS[id]=polygons;
+  }
+ }
+ rebuildNeighboursV12();
+ initPaths();
+ render();
+ toast(kingdomLabel('Saved world restored.'));
+};

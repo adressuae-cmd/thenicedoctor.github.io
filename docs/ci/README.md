@@ -6,7 +6,7 @@ commit.
 
 | File | What it does |
 |---|---|
-| [`ci.yml`](ci.yml) | Runs all six engine suites on Node 20, then rebuilds the whole chain from `src/base/` and fails if the result does not match `dist/sovereign-v7.html` byte for byte |
+| [`ci.yml`](ci.yml) | Builds the engine fixtures through V15, runs every engine suite on Node 20, and checks that rebuilding leaves the shipped `dist/` artifacts byte for byte identical |
 | [`pages.yml`](pages.yml) | Deploys the site through the Pages Actions pipeline instead of branch publishing |
 
 ## Enabling `ci.yml`
