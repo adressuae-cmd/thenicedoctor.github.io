@@ -22,6 +22,10 @@ const INDUSTRIAL_SITES = {
 };
 const INDUSTRY_ORDER = Object.keys(INDUSTRIAL_SITES);
 const MAX_ROYAL_FACILITIES = INDUSTRY_ORDER.length*KINGDOM_REGION_IDS.size;
+const INDUSTRIAL_CONSTRAINTS = {
+ funding:'تمويل التشغيل',labor:'العمالة',feedstock:'المواد الخام',power:'الكهرباء'
+};
+
 
 function emptyRoyalIndustry(){
  return {
@@ -73,10 +77,14 @@ function settleRoyalIndustry(){
    if(site.type!==type||site.ready>S.month||site.paused)continue;
    const account=site.company?government.companies[site.company]:treasury;
    const [input,quantity]=spec.input??[];
-   let utilization=Math.max(0,Math.min(1,workers[site.region]/spec.workers,account.cash/spec.cost));
-   if(!Number.isFinite(utilization))utilization=0;
-   if(input)utilization=Math.min(utilization,industry.stock[input]/quantity);
-   if(spec.power)utilization=Math.min(utilization,power/spec.power);
+   const capacity={funding:account.cash/spec.cost,labor:workers[site.region]/spec.workers};
+   if(input)capacity.feedstock=industry.stock[input]/quantity;
+   if(spec.power)capacity.power=power/spec.power;
+   const normalized=Object.entries(capacity).map(([key,value])=>[
+    key,Number.isFinite(value)?Math.max(0,value):0
+   ]);
+   const constraints=normalized.filter(([,value])=>value<1-1e-9).map(([key])=>key);
+   const utilization=Math.min(1,...normalized.map(([,value])=>value));
    const output=spec.output*utilization;
    if(input)removeRoyalStock(input,quantity*utilization);
    power=Math.max(0,power-spec.power*utilization);
@@ -90,7 +98,7 @@ function settleRoyalIndustry(){
    account.cash=Math.max(0,account.cash-cost);
    if(site.company)account.operating+=cost;
    else spent+=cost;
-   runs.push({type,region:site.region,output,cost,workers:utilization*spec.workers});
+   runs.push({type,region:site.region,output,cost,workers:utilization*spec.workers,constraints});
   }
  }
  const sales={};
@@ -141,10 +149,33 @@ function validateRoyalIndustry(industry,month){
  if(!l||!Number.isInteger(l.month)||l.month<1||l.month>month||
   !['spent','revenue','generated','powerUsed'].every(key=>amount(l[key]))||l.powerUsed>l.generated||
   !Array.isArray(l.runs)||l.runs.length>industry.facilities.length||
-  l.runs.some(r=>!r||!seen.has(r.type+':'+r.region)||!['output','cost','workers'].every(key=>amount(r[key])))||
+  l.runs.some(r=>!r||!seen.has(r.type+':'+r.region)||!['output','cost','workers'].every(key=>amount(r[key]))||
+   (r.constraints!==undefined&&(!Array.isArray(r.constraints)||r.constraints.length>4||
+    r.constraints.some(key=>!Object.hasOwn(INDUSTRIAL_CONSTRAINTS,key)))))||
   Object.keys(INDUSTRIAL_GOODS).some(key=>!amount(l.sales?.[key]?.quantity)||!amount(l.sales[key].value))){
   throw Error('تقرير الإنتاج غير صالح.');
  }
+}
+
+function kingdomIndustrialRoadmap(){
+ const {facilities,last}=S.kingdom.industry;
+ const has=type=>facilities.some(site=>site.type===type&&!site.paused);
+ const sold=value=>last?.sales[value]?.quantity>0;
+ const milestones=[
+  [has('gas')&&has('mine'),'اعتماد حقل غاز ومنجم حديد لتوفير المدخلات'],
+  [has('power'),'اعتماد محطة كهرباء تغذّي المنشآت'],
+  [has('steel'),'اعتماد مصنع فولاذ'],
+  [sold('steel'),'بيع الفولاذ في آخر شهر']
+ ];
+ const achieved=milestones.filter(([done])=>done).length;
+ const initialCost=['gas','mine'].reduce((cost,type)=>cost+(has(type)?0:INDUSTRIAL_SITES[type].capital),0);
+ const fundingHelp=achieved===0&&S.player===KINGDOM.id&&S.kingdom.treasury.cash<initialCost
+  ?'<p>تحتاج '+kingdomMoney(initialCost)+' لاستكمال اعتماد حقل الغاز ومنجم الحديد. حقّق فائضاً من السياسات، ثم قدّم شهراً ليدخل الخزينة.</p>'
+   +'<button id="planBudget" class="full">فتح السياسات</button>':'';
+ return '<section class="block" lang="ar" dir="rtl"><h3>خط الإنتاج الأول</h3>'+fundingHelp
+  +'<progress aria-label="تقدم خط الإنتاج" value="'+achieved+'" max="'+milestones.length+'"></progress><ol>'
+  +milestones.map(([done,label])=>'<li>'+label+' · '+(done?'تم':'متبقٍ')+'</li>').join('')
+  +'</ol><button id="openIndustrialPlan" class="full">إدارة خط الإنتاج</button></section>';
 }
 
 const priorIndustrialEconomy=economyPanel;
@@ -164,8 +195,14 @@ economyPanel=function(n){
  const facilities=industry.facilities.map(site=>{
   const run=last?.runs.find(r=>r.type===site.type&&r.region===site.region);
   const unit=site.type==='power'?' غيغاواط ساعة':' ألف طن';
-  return metric(INDUSTRIAL_SITES[site.type].label+' · '+n.regions.find(r=>r.id===site.region).name,
-   site.ready>S.month?'قيد الإنشاء':run?'الإنتاج '+KINGDOM_NUMBER.format(run.output)+unit:'بانتظار أول دورة تشغيل');
+  const name=INDUSTRIAL_SITES[site.type].label+' · '+n.regions.find(r=>r.id===site.region).name;
+  if(site.paused)return metric(name,'معلّقة بأمر ملكي');
+  if(site.ready>S.month)return metric(name,'قيد الإنشاء · المتبقي '+KINGDOM_NUMBER.format(site.ready-S.month)+' شهر');
+  if(!run)return metric(name,'بانتظار أول دورة تشغيل');
+  const utilization=KINGDOM_NUMBER.format(100*run.output/INDUSTRIAL_SITES[site.type].output)+'٪';
+  const limitations=run.constraints?.map(key=>INDUSTRIAL_CONSTRAINTS[key]).join('، ');
+  return metric(name,'الإنتاج '+KINGDOM_NUMBER.format(run.output)+unit+' · '+utilization)
+   +(limitations?metric('قيود التشغيل في الشهر الماضي',limitations):'');
  }).join('');
  return '<section class="block" dir="rtl" lang="ar"><h3>الإنتاج الصناعي</h3>'
   +metric('الإقليم المختار',n.regions.find(r=>r.id===region).name)
@@ -184,7 +221,12 @@ economyPanel=function(n){
 const priorIndustryBindings=bindPanel;
 bindPanel=function(){
  priorIndustryBindings();
- if(current()?.id!==KINGDOM.id||view!=='economy')return;
+ if(current()?.id!==KINGDOM.id)return;
+ const plan=$('panel').querySelector('#openIndustrialPlan');
+ if(plan)plan.onclick=()=>setView('economy');
+ const budget=$('panel').querySelector('#planBudget');
+ if(budget)budget.onclick=()=>setView('policies');
+ if(view!=='economy')return;
  const button=$('panel').querySelector('#royalApproveFacility');
  if(button)button.onclick=()=>{
   if(approveRoyalFacility($('royalFacility').value,S.kingdom.region)){

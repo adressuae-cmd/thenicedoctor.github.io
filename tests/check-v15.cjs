@@ -160,7 +160,17 @@ run('renderTick=()=>{}');
  assert.equal(r("approveRoyalFacility('refinery','SAU')"),false,'duplicate approvals are atomic');
  r("for(let i=0;i<4;i++)$('step').onclick()");
  assert.equal(r('S.kingdom.industry.last.runs[0].output'),0,'refinery lacks electricity and inputs');
+ assert.deepEqual(Array.from(r('S.kingdom.industry.last.runs[0].constraints')),['feedstock','power']);
+ assert(r("economyPanel(player()).includes('المواد الخام، الكهرباء')"));
+ assert.deepEqual(Array.from(r("royalProjectDependencies('steel')")),['خام الحديد','الكهرباء']);
+ assert(!r("zayedRecommendations('SAU').find(p=>p.sector==='industry').ready"));
  for(const [type,region] of [['oil','JOR'],['gas','QAT'],['mine','MRT'],['power','SAU'],['steel','SAU'],['copper','LBN'],['bauxite','TUN'],['phosphate','BHR'],['gold','JOR']]){
+  if(type==='steel'){
+   assert.deepEqual(Array.from(r("royalProjectDependencies('steel')")),[],'planned supply can be commissioned on time');
+   r("S.kingdom.industry.facilities.find(site=>site.type==='gas').paused=true");
+   assert.deepEqual(Array.from(r("royalProjectDependencies('steel')")),['الكهرباء','الغاز الطبيعي']);
+   r("delete S.kingdom.industry.facilities.find(site=>site.type==='gas').paused");
+  }
   assert(r(`approveRoyalFacility('${type}','${region}')`));
  }
  r("for(let i=0;i<5;i++)$('step').onclick()");

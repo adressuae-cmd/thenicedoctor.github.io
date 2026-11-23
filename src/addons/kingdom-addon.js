@@ -247,7 +247,7 @@ overview=function(n){
   +metric('السكان',KINGDOM_NUMBER.format(n.pop*r.populationWeight)+' مليون')
   +metric('حصة الناتج',kingdomMoney(n.gdp*r.outputWeight))
   +metric('المدن المتاحة للتطوير',KINGDOM_NUMBER.format(cityCount))
-  +'<button id="royalRegionCities" class="full">إدارة مدن الإقليم</button></section>'+base;
+  +'<button id="royalRegionCities" class="full">إدارة مدن الإقليم</button></section>'+kingdomIndustrialRoadmap()+base;
 };
 
 const originalKingdomRegionBindings=bindPanel;

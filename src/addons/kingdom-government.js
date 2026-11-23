@@ -76,21 +76,54 @@ function removeRoyalStock(good,quantity){
  return companyQuantity;
 }
 
+// Forecast one month of shared supply when the proposed site is ready.
+function royalProjectDependencies(type){
+ const spec=INDUSTRIAL_SITES[type],{facilities,stock}=S.kingdom.industry;
+ if(!spec.input&&!spec.power)return [];
+ const active=facilities.filter(site=>!site.paused&&site.ready<=S.month+spec.months)
+  .map(site=>INDUSTRIAL_SITES[site.type]);
+ const supply=good=>stock[good]+active.reduce((qty,site)=>qty+(site.good===good?site.output:0),0);
+ const demand=good=>active.reduce((qty,site)=>qty+(site.input?.[0]===good?site.input[1]:0),0);
+ const missing=[];
+ if(spec.input){
+  const [good,quantity]=spec.input;
+  if(supply(good)-demand(good)<quantity)missing.push(INDUSTRIAL_GOODS[good][0]);
+ }
+ if(spec.power){
+  const plants=active.filter(site=>site===INDUSTRIAL_SITES.power);
+  const gasNeeded=demand('gas'),gas=supply('gas');
+  const electricalOutput=plants.length*INDUSTRIAL_SITES.power.output*(gasNeeded?Math.min(1,gas/gasNeeded):0);
+  const committed=active.reduce((qty,site)=>qty+site.power,0);
+  if(electricalOutput-committed<spec.power){
+   missing.push('الكهرباء');
+   if(plants.length&&gas<gasNeeded)missing.push(INDUSTRIAL_GOODS.gas[0]);
+  }
+ }
+ return missing;
+}
+
 function zayedRecommendations(region){
  if(!S.kingdom||!KINGDOM_REGION_IDS.has(region))return [];
  const {industry,council:government,treasury}=S.kingdom;
  return Object.keys(ROYAL_DELEGATES).flatMap(sector=>{
-  const specKey=INDUSTRY_ORDER.find(type=>INDUSTRIAL_SITES[type].ministry===sector&&
+  const candidates=INDUSTRY_ORDER.filter(type=>INDUSTRIAL_SITES[type].ministry===sector&&
    !industry.facilities.some(site=>site.type===type&&site.region===region));
-  if(!specKey)return [];
+  if(!candidates.length)return [];
+  const readyType=candidates.find(type=>royalProjectDependencies(type).length===0);
+  const specKey=readyType??candidates[0];
   const spec=INDUSTRIAL_SITES[specKey];
+  const message=spec.label+' · '+nation(KINGDOM.id).regions.find(r=>r.id===region).name;
+  if(!readyType)return [{
+   sector,kind:'construct',type:specKey,region,message,ready:false,
+   reason:'أمّن هذه المدخلات قبل الاعتماد: '+royalProjectDependencies(specKey).join('، ')
+  }];
   const company=government.companies[sector],ministry=government.ministries[sector];
   const needed=Math.max(0,spec.capital+spec.cost-company.cash);
-  const message=INDUSTRIAL_SITES[specKey].label+' · '+nation(KINGDOM.id).regions.find(r=>r.id===region).name;
   if(needed===0)return [{sector,kind:'construct',type:specKey,region,message,ready:true}];
   if(ministry.cash>=needed)return [{sector,kind:'capitalize',amount:needed,message,ready:true}];
   const amount=needed-ministry.cash;
-  return [{sector,kind:'appropriate',amount,message,ready:treasury.cash>=amount}];
+  return [{sector,kind:'appropriate',amount,message,ready:treasury.cash>=amount,
+   reason:treasury.cash<amount?'رصيد الخزينة لا يغطي التخصيص المقترح.':null}];
  });
 }
 
@@ -168,6 +201,7 @@ function royalCouncilPanel(n){
    '<div class="projectcard"><strong>'+ROYAL_DELEGATES[proposal.sector]+'</strong>'
    +'<p>'+ROYAL_ORDER_ACTIONS[proposal.kind]+' · '+proposal.message+'</p>'
    +(proposal.amount?metric('التمويل المقترح',kingdomMoney(proposal.amount)):'')
+   +(proposal.reason?'<p class="note">'+proposal.reason+'</p>':'')
    +'<button data-zayed="'+index+'"'+(proposal.ready?'':' disabled')+'>اعتماد التوصية</button></div>'
   ).join('')+'</div>':'';
  const orders=g.orders.slice(-10).reverse().map(order=>

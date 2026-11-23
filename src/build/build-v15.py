@@ -84,6 +84,10 @@ rep("gameDate(e.month).toLocaleDateString('en',",
     "gameDate(e.month).toLocaleDateString(S.kingdom?'ar':'en',", count=2)
 rep("function toast(s){$('toast').textContent=s;", "function toast(s){$('toast').textContent=kingdomLabel(s);")
 
+rep("""function economyPanel(n){const b=fiscal(n);return '<div class="block"><h3>National accounts</h3>""",
+    """function economyPanel(n){const b=fiscal(n);return '<div class="block"><h3>'+
+    (S.kingdom?'الميزانية العامة والدين':'National accounts')+'</h3>""")
+
 # V12 attached its budget fit in render(). Opening the Ideologies tab only calls renderPanel(), which
 # rebinds the preset buttons without it, so in ordinary play the fit never ran. V15 attaches preset
 # funding in bindPanel, which every panel draw goes through; the render-level hook is retired so the

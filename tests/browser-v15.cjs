@@ -80,6 +80,13 @@ async function main() {
     assert.equal(await kingdom.evaluate(() => gameDate(0).toISOString()), '2005-07-01T00:00:00.000Z');
     assert.equal(await kingdom.evaluate(() => S.player), 'UHK');
     assert.equal(await kingdom.locator('#royalRegion option').count(), 28);
+    await kingdom.getByRole('heading',{name:'خط الإنتاج الأول',exact:true}).waitFor();
+    await kingdom.locator('#planBudget').click();
+    await kingdom.getByText('الإنفاق الدفاعي',{exact:true}).first().waitFor();
+    await kingdom.locator('[data-view="overview"]').click();
+    await kingdom.locator('#openIndustrialPlan').click();
+    await kingdom.getByRole('heading',{name:'الإنتاج الصناعي',exact:true}).waitFor();
+    await kingdom.locator('[data-view="overview"]').click();
     const mapped = await kingdom.evaluate(() => {
       const scale = transform();
       return [[34.4, 31.43], [50.55, 26.1]].map(([lon, lat]) => {
@@ -130,11 +137,13 @@ async function main() {
     assert.equal(await kingdom.evaluate(() => player().fund), savedFinances.fund);
     assert.equal(await kingdom.evaluate(() => S.kingdom.industry.facilities.length), 1);
     await kingdom.locator('[data-view="economy"]').click();
-    await kingdom.getByRole('heading',{name:'الحسابات الوطنية',exact:true}).first().waitFor();
+    await kingdom.getByRole('heading',{name:'الحسابات الوطنية',exact:true}).waitFor();
     await kingdom.locator('[data-view="policies"]').click();
     await kingdom.getByText('الإنفاق الدفاعي', {exact:true}).first().waitFor();
     await kingdom.locator('[data-view="agencies"]').click();
     await kingdom.getByRole('heading',{name:'زايد والوكلاء',exact:true}).waitFor();
+    await kingdom.getByText('أمّن هذه المدخلات قبل الاعتماد: خام الحديد، الكهرباء',{exact:true}).waitFor();
+    assert.equal(await kingdom.locator('[data-zayed][disabled]').count(),1);
     const beforeOrders = await kingdom.evaluate(() => S.kingdom.council.orders.length);
     await kingdom.locator('[data-zayed]:not([disabled])').first().click();
     assert(await kingdom.evaluate(count => S.kingdom.council.orders.length === count + 1 &&
