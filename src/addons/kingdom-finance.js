@@ -1,5 +1,22 @@
 // Balances are in the same constant USD billions as the base engine.
 const KINGDOM_FUND_RETURN = .035/12;
+function royalTreasuryCanPay(amount){
+ const treasury=S.kingdom.treasury;
+ return Number.isFinite(amount)&&amount>=0&&(treasury.unlimitedIncome||treasury.cash>=amount);
+}
+
+function debitRoyalTreasury(amount){
+ const treasury=S.kingdom.treasury;
+ const topUp=Math.max(0,amount-treasury.cash);
+ if(topUp)treasury.extraIncome=(treasury.extraIncome??0)+topUp;
+ treasury.cash=Math.max(0,treasury.cash-amount);
+}
+
+function royalTreasuryDisplay(){
+ const treasury=S.kingdom.treasury;
+ return treasury.unlimitedIncome?'غير محدود':kingdomMoney(treasury.cash);
+}
+
 const originalKingdomFiscal = fiscal;
 fiscal=function(n,p=n.policies){
  return originalKingdomFiscal(n,n.id===KINGDOM.id?{...p,sovereignFund:0}:p);
@@ -16,11 +33,17 @@ const originalKingdomDebt = accrueDebtV6;
 accrueDebtV6=function(n,budget,oldGDP){
  if(n.id!==KINGDOM.id)return originalKingdomDebt(n,budget,oldGDP);
  const treasury=S.kingdom.treasury, opening=treasury.cash;
- const revenue=budget.revenue*oldGDP/1200;
+ let revenue=budget.revenue*oldGDP/1200;
+ const normalRevenue=revenue;
  const spending=budget.spending*oldGDP/1200;
  const canBorrow=!debtDisabled()&&!debtFrozen();
  const interest=canBorrow?n.debt*budget.interest/1200:0;
- const net=opening+revenue-spending-interest;
+ let net=opening+revenue-spending-interest;
+ if(treasury.unlimitedIncome&&net<0){
+  treasury.extraIncome=(treasury.extraIncome??0)-net;
+  revenue-=net;
+  net=0;
+ }
  const financing=Math.max(0,-net);
  const borrowing=canBorrow?financing:0;
  treasury.cash=Math.max(0,net);
@@ -28,6 +51,7 @@ accrueDebtV6=function(n,budget,oldGDP){
   month:S.month,opening,revenue,spending,interest,borrowing,
   unfunded:financing-borrowing,closing:treasury.cash
  };
+ if(revenue!==normalRevenue)treasury.last.extraIncome=revenue-normalRevenue;
  if(debtDisabled())n.debt=0;
  else if(canBorrow)n.debt=(n.debt+borrowing)/(1+n.inflation/1200);
 };
@@ -38,8 +62,9 @@ function transferKingdomFunds(direction,amount){
  const realm=player(),treasury=S.kingdom.treasury,deposit=direction==='deposit';
  const source=deposit?treasury.cash:realm.fund;
  const destination=deposit?realm.fund:treasury.cash;
- if(amount>source||!Number.isFinite(destination+amount))return false;
- treasury.cash+=deposit?-amount:amount;
+ if(!(deposit?royalTreasuryCanPay(amount):amount<=source)||!Number.isFinite(destination+amount))return false;
+ if(deposit)debitRoyalTreasury(amount);
+ else treasury.cash+=amount;
  realm.fund+=deposit?amount:-amount;
  treasury.transfers.push({month:S.month,direction,amount});
  addEvent('أمر تحويل ملكي',deposit?'تحويل من الخزينة إلى الصندوق السيادي.':'تحويل من الصندوق السيادي إلى الخزينة.','economy');
@@ -49,11 +74,14 @@ function transferKingdomFunds(direction,amount){
 function validKingdomTreasury(treasury,month){
  const amount=value=>Number.isFinite(value)&&value>=0;
  const validMonth=value=>Number.isInteger(value)&&value>=0&&value<=month;
- if(!treasury||!amount(treasury.cash))return false;
+ if(!treasury||!amount(treasury.cash)||
+  (treasury.unlimitedIncome!==undefined&&typeof treasury.unlimitedIncome!=='boolean')||
+  (treasury.extraIncome!==undefined&&!amount(treasury.extraIncome)))return false;
  const {last,transfers}=treasury;
  if(last!==null){
   if(!last||!validMonth(last.month)||
    !['opening','revenue','spending','interest','borrowing','unfunded','closing'].every(key=>amount(last[key])))return false;
+  if(last.extraIncome!==undefined&&(!amount(last.extraIncome)||last.extraIncome>last.revenue))return false;
   const balance=last.opening+last.revenue+last.borrowing+last.unfunded-last.spending-last.interest;
   if(Math.abs(balance-last.closing)>1e-8*Math.max(1,last.opening,last.revenue,last.spending))return false;
  }
@@ -73,16 +101,20 @@ const originalKingdomEconomy=economyPanel;
 economyPanel=function(n){
  const base=originalKingdomEconomy(n);
  if(n.id!==KINGDOM.id)return base;
- const {cash,last}=S.kingdom.treasury;
- const transfer=n.id===S.player?'<label for="royalTransferAmount">المبلغ (مليار دولار)</label>'
+ const {last,unlimitedIncome}=S.kingdom.treasury;
+ const transfer=n.id===S.player?'<label class="toggleline" for="royalUnlimitedIncome">دخل الخزينة غير محدود'
+  +'<input id="royalUnlimitedIncome" type="checkbox"'+(unlimitedIncome?' checked':'')+'></label>'
+  +'<p class="note">عند التفعيل، تغطي الخزينة أي عجز فور الحاجة. يستمر تسجيل الإيرادات والنفقات.</p>'
+  +'<label for="royalTransferAmount">المبلغ (مليار دولار)</label>'
   +'<input id="royalTransferAmount" type="number" min="0" step="any" dir="ltr">'
   +'<div class="buttonrow"><button id="royalDeposit">تحويل إلى الصندوق</button>'
   +'<button id="royalWithdraw">تحويل إلى الخزينة</button></div>':'';
  return '<section dir="rtl" lang="ar" class="block"><h3>الخزينة والصندوق السيادي</h3>'
-  +metric('رصيد الخزينة',kingdomMoney(cash))+metric('رصيد الصندوق',kingdomMoney(n.fund))
+  +metric('رصيد الخزينة المتاح',royalTreasuryDisplay())+metric('رصيد الصندوق',kingdomMoney(n.fund))
   +(last?metric('إيرادات الشهر',kingdomMoney(last.revenue))+metric('نفقات الشهر المخططة',kingdomMoney(last.spending))
    +metric('فوائد الدين',kingdomMoney(last.interest))+metric('التمويل بالدين',kingdomMoney(last.borrowing))
    +metric('نفقات غير ممولة',kingdomMoney(last.unfunded)):'')
+  +(unlimitedIncome?metric('إيراد التغطية المتراكم',kingdomMoney(S.kingdom.treasury.extraIncome??0)):'')
   +transfer+'</section>'+base;
 };
 
@@ -90,6 +122,13 @@ const originalKingdomFinanceBindings=bindPanel;
 bindPanel=function(){
  originalKingdomFinanceBindings();
  if(current()?.id!==KINGDOM.id||view!=='economy')return;
+ const toggle=$('panel').querySelector('#royalUnlimitedIncome');
+ if(toggle)toggle.onchange=()=>{
+  if(S.player!==KINGDOM.id)return;
+  S.kingdom.treasury.unlimitedIncome=toggle.checked;
+  renderPanel();
+  $('royalUnlimitedIncome')?.focus();
+ };
  for(const [id,direction] of [['royalDeposit','deposit'],['royalWithdraw','withdraw']]){
   const button=$('panel').querySelector('#'+id);
   if(!button)continue;

@@ -4294,6 +4294,23 @@ bindPanel=function(){
 
 // Balances are in the same constant USD billions as the base engine.
 const KINGDOM_FUND_RETURN = .035/12;
+function royalTreasuryCanPay(amount){
+ const treasury=S.kingdom.treasury;
+ return Number.isFinite(amount)&&amount>=0&&(treasury.unlimitedIncome||treasury.cash>=amount);
+}
+
+function debitRoyalTreasury(amount){
+ const treasury=S.kingdom.treasury;
+ const topUp=Math.max(0,amount-treasury.cash);
+ if(topUp)treasury.extraIncome=(treasury.extraIncome??0)+topUp;
+ treasury.cash=Math.max(0,treasury.cash-amount);
+}
+
+function royalTreasuryDisplay(){
+ const treasury=S.kingdom.treasury;
+ return treasury.unlimitedIncome?'غير محدود':kingdomMoney(treasury.cash);
+}
+
 const originalKingdomFiscal = fiscal;
 fiscal=function(n,p=n.policies){
  return originalKingdomFiscal(n,n.id===KINGDOM.id?{...p,sovereignFund:0}:p);
@@ -4310,11 +4327,17 @@ const originalKingdomDebt = accrueDebtV6;
 accrueDebtV6=function(n,budget,oldGDP){
  if(n.id!==KINGDOM.id)return originalKingdomDebt(n,budget,oldGDP);
  const treasury=S.kingdom.treasury, opening=treasury.cash;
- const revenue=budget.revenue*oldGDP/1200;
+ let revenue=budget.revenue*oldGDP/1200;
+ const normalRevenue=revenue;
  const spending=budget.spending*oldGDP/1200;
  const canBorrow=!debtDisabled()&&!debtFrozen();
  const interest=canBorrow?n.debt*budget.interest/1200:0;
- const net=opening+revenue-spending-interest;
+ let net=opening+revenue-spending-interest;
+ if(treasury.unlimitedIncome&&net<0){
+  treasury.extraIncome=(treasury.extraIncome??0)-net;
+  revenue-=net;
+  net=0;
+ }
  const financing=Math.max(0,-net);
  const borrowing=canBorrow?financing:0;
  treasury.cash=Math.max(0,net);
@@ -4322,6 +4345,7 @@ accrueDebtV6=function(n,budget,oldGDP){
   month:S.month,opening,revenue,spending,interest,borrowing,
   unfunded:financing-borrowing,closing:treasury.cash
  };
+ if(revenue!==normalRevenue)treasury.last.extraIncome=revenue-normalRevenue;
  if(debtDisabled())n.debt=0;
  else if(canBorrow)n.debt=(n.debt+borrowing)/(1+n.inflation/1200);
 };
@@ -4332,8 +4356,9 @@ function transferKingdomFunds(direction,amount){
  const realm=player(),treasury=S.kingdom.treasury,deposit=direction==='deposit';
  const source=deposit?treasury.cash:realm.fund;
  const destination=deposit?realm.fund:treasury.cash;
- if(amount>source||!Number.isFinite(destination+amount))return false;
- treasury.cash+=deposit?-amount:amount;
+ if(!(deposit?royalTreasuryCanPay(amount):amount<=source)||!Number.isFinite(destination+amount))return false;
+ if(deposit)debitRoyalTreasury(amount);
+ else treasury.cash+=amount;
  realm.fund+=deposit?amount:-amount;
  treasury.transfers.push({month:S.month,direction,amount});
  addEvent('أمر تحويل ملكي',deposit?'تحويل من الخزينة إلى الصندوق السيادي.':'تحويل من الصندوق السيادي إلى الخزينة.','economy');
@@ -4343,11 +4368,14 @@ function transferKingdomFunds(direction,amount){
 function validKingdomTreasury(treasury,month){
  const amount=value=>Number.isFinite(value)&&value>=0;
  const validMonth=value=>Number.isInteger(value)&&value>=0&&value<=month;
- if(!treasury||!amount(treasury.cash))return false;
+ if(!treasury||!amount(treasury.cash)||
+  (treasury.unlimitedIncome!==undefined&&typeof treasury.unlimitedIncome!=='boolean')||
+  (treasury.extraIncome!==undefined&&!amount(treasury.extraIncome)))return false;
  const {last,transfers}=treasury;
  if(last!==null){
   if(!last||!validMonth(last.month)||
    !['opening','revenue','spending','interest','borrowing','unfunded','closing'].every(key=>amount(last[key])))return false;
+  if(last.extraIncome!==undefined&&(!amount(last.extraIncome)||last.extraIncome>last.revenue))return false;
   const balance=last.opening+last.revenue+last.borrowing+last.unfunded-last.spending-last.interest;
   if(Math.abs(balance-last.closing)>1e-8*Math.max(1,last.opening,last.revenue,last.spending))return false;
  }
@@ -4367,16 +4395,20 @@ const originalKingdomEconomy=economyPanel;
 economyPanel=function(n){
  const base=originalKingdomEconomy(n);
  if(n.id!==KINGDOM.id)return base;
- const {cash,last}=S.kingdom.treasury;
- const transfer=n.id===S.player?'<label for="royalTransferAmount">المبلغ (مليار دولار)</label>'
+ const {last,unlimitedIncome}=S.kingdom.treasury;
+ const transfer=n.id===S.player?'<label class="toggleline" for="royalUnlimitedIncome">دخل الخزينة غير محدود'
+  +'<input id="royalUnlimitedIncome" type="checkbox"'+(unlimitedIncome?' checked':'')+'></label>'
+  +'<p class="note">عند التفعيل، تغطي الخزينة أي عجز فور الحاجة. يستمر تسجيل الإيرادات والنفقات.</p>'
+  +'<label for="royalTransferAmount">المبلغ (مليار دولار)</label>'
   +'<input id="royalTransferAmount" type="number" min="0" step="any" dir="ltr">'
   +'<div class="buttonrow"><button id="royalDeposit">تحويل إلى الصندوق</button>'
   +'<button id="royalWithdraw">تحويل إلى الخزينة</button></div>':'';
  return '<section dir="rtl" lang="ar" class="block"><h3>الخزينة والصندوق السيادي</h3>'
-  +metric('رصيد الخزينة',kingdomMoney(cash))+metric('رصيد الصندوق',kingdomMoney(n.fund))
+  +metric('رصيد الخزينة المتاح',royalTreasuryDisplay())+metric('رصيد الصندوق',kingdomMoney(n.fund))
   +(last?metric('إيرادات الشهر',kingdomMoney(last.revenue))+metric('نفقات الشهر المخططة',kingdomMoney(last.spending))
    +metric('فوائد الدين',kingdomMoney(last.interest))+metric('التمويل بالدين',kingdomMoney(last.borrowing))
    +metric('نفقات غير ممولة',kingdomMoney(last.unfunded)):'')
+  +(unlimitedIncome?metric('إيراد التغطية المتراكم',kingdomMoney(S.kingdom.treasury.extraIncome??0)):'')
   +transfer+'</section>'+base;
 };
 
@@ -4384,6 +4416,13 @@ const originalKingdomFinanceBindings=bindPanel;
 bindPanel=function(){
  originalKingdomFinanceBindings();
  if(current()?.id!==KINGDOM.id||view!=='economy')return;
+ const toggle=$('panel').querySelector('#royalUnlimitedIncome');
+ if(toggle)toggle.onchange=()=>{
+  if(S.player!==KINGDOM.id)return;
+  S.kingdom.treasury.unlimitedIncome=toggle.checked;
+  renderPanel();
+  $('royalUnlimitedIncome')?.focus();
+ };
  for(const [id,direction] of [['royalDeposit','deposit'],['royalWithdraw','withdraw']]){
   const button=$('panel').querySelector('#'+id);
   if(!button)continue;
@@ -4452,9 +4491,10 @@ function approveRoyalFacility(type,region,company){
  const {industry,treasury,council:government}=S.kingdom;
  if(company!==undefined&&company!==spec.ministry)return false;
  const account=company?government.companies[company]:treasury;
- if(industry.facilities.length>=MAX_ROYAL_FACILITIES||account.cash<spec.capital||
+ if(industry.facilities.length>=MAX_ROYAL_FACILITIES||(company?account.cash<spec.capital:!royalTreasuryCanPay(spec.capital))||
    industry.facilities.some(site=>site.type===type&&site.region===region))return false;
- account.cash-=spec.capital;
+ if(company)account.cash-=spec.capital;
+ else debitRoyalTreasury(spec.capital);
  const site={type,region,ordered:S.month,ready:S.month+spec.months};
  if(company){
   Object.assign(site,{company,paused:false});
@@ -4478,7 +4518,7 @@ function settleRoyalIndustry(){
    if(site.type!==type||site.ready>S.month||site.paused)continue;
    const account=site.company?government.companies[site.company]:treasury;
    const [input,quantity]=spec.input??[];
-   const capacity={funding:account.cash/spec.cost,labor:workers[site.region]/spec.workers};
+   const capacity={funding:!site.company&&treasury.unlimitedIncome?1:account.cash/spec.cost,labor:workers[site.region]/spec.workers};
    if(input)capacity.feedstock=industry.stock[input]/quantity;
    if(spec.power)capacity.power=power/spec.power;
    const normalized=Object.entries(capacity).map(([key,value])=>[
@@ -4496,9 +4536,13 @@ function settleRoyalIndustry(){
    }
    workers[site.region]-=utilization*spec.workers;
    const cost=spec.cost*utilization;
-   account.cash=Math.max(0,account.cash-cost);
-   if(site.company)account.operating+=cost;
-   else spent+=cost;
+   if(site.company){
+    account.cash=Math.max(0,account.cash-cost);
+    account.operating+=cost;
+   }else{
+    debitRoyalTreasury(cost);
+    spent+=cost;
+   }
    runs.push({type,region:site.region,output,cost,workers:utilization*spec.workers,constraints});
   }
  }
@@ -4570,7 +4614,7 @@ function kingdomIndustrialRoadmap(){
  ];
  const achieved=milestones.filter(([done])=>done).length;
  const initialCost=['gas','mine'].reduce((cost,type)=>cost+(has(type)?0:INDUSTRIAL_SITES[type].capital),0);
- const fundingHelp=achieved===0&&S.player===KINGDOM.id&&S.kingdom.treasury.cash<initialCost
+ const fundingHelp=achieved===0&&S.player===KINGDOM.id&&!royalTreasuryCanPay(initialCost)
   ?'<p>تحتاج '+kingdomMoney(initialCost)+' لاستكمال اعتماد حقل الغاز ومنجم الحديد. حقّق فائضاً من السياسات، ثم قدّم شهراً ليدخل الخزينة.</p>'
    +'<button id="planBudget" class="full">فتح السياسات</button>':'';
  return '<section class="block" lang="ar" dir="rtl"><h3>خط الإنتاج الأول</h3>'+fundingHelp
@@ -4737,10 +4781,12 @@ function royalFundingOrder(kind,sector,amount){
  const {treasury,council:government}=S.kingdom;
  const accounts={treasury,ministry:government.ministries[sector],company:government.companies[sector]};
  const [from,to]=ROYAL_FUNDING_ROUTES[kind].map(key=>accounts[key]);
- if(!Number.isFinite(amount)||amount<=0||amount-from.cash>1e-12)return 0;
- const settled=Math.min(amount,from.cash);
+ const unlimited=from===treasury&&treasury.unlimitedIncome;
+ if(!Number.isFinite(amount)||amount<=0||(!unlimited&&amount-from.cash>1e-12))return 0;
+ const settled=unlimited?amount:Math.min(amount,from.cash);
  if(!settled||!Number.isFinite(to.cash+settled))return 0;
- from.cash-=settled;
+ if(from===treasury)debitRoyalTreasury(settled);
+ else from.cash-=settled;
  to.cash+=settled;
  return settled;
 }
@@ -4820,7 +4866,7 @@ function royalProjectDependencies(type){
 
 function zayedRecommendations(region){
  if(!S.kingdom||!KINGDOM_REGION_IDS.has(region))return [];
- const {industry,council:government,treasury}=S.kingdom;
+ const {industry,council:government}=S.kingdom;
  return Object.keys(ROYAL_DELEGATES).flatMap(sector=>{
   const candidates=INDUSTRY_ORDER.filter(type=>INDUSTRIAL_SITES[type].ministry===sector&&
    !industry.facilities.some(site=>site.type===type&&site.region===region));
@@ -4838,8 +4884,8 @@ function zayedRecommendations(region){
   if(needed===0)return [{sector,kind:'construct',type:specKey,region,message,ready:true}];
   if(ministry.cash>=needed)return [{sector,kind:'capitalize',amount:needed,message,ready:true}];
   const amount=needed-ministry.cash;
-  return [{sector,kind:'appropriate',amount,message,ready:treasury.cash>=amount,
-   reason:treasury.cash<amount?'رصيد الخزينة لا يغطي التخصيص المقترح.':null}];
+  return [{sector,kind:'appropriate',amount,message,ready:royalTreasuryCanPay(amount),
+   reason:!royalTreasuryCanPay(amount)?'رصيد الخزينة لا يغطي التخصيص المقترح.':null}];
  });
 }
 
@@ -4914,7 +4960,7 @@ function royalCouncilPanel(n){
  const suggestions=owned?'<div class="block"><h3>زايد والوكلاء</h3>'
   +'<p>يجمع زايد توصيات وكلاء الوزارات. تُنفَّذ التوصية بعد اعتمادك.</p>'
   +'<p>توصيات إقليم '+n.regions.find(r=>r.id===region).name+'</p>'
-  +metric('الرصيد المتاح قبل التوصيات',kingdomMoney(S.kingdom.treasury.cash))
+  +metric('الرصيد المتاح قبل التوصيات',royalTreasuryDisplay())
   +zayedRecommendations(region).map((proposal,index)=>
    '<div class="projectcard"><strong>'+ROYAL_DELEGATES[proposal.sector]+'</strong>'
    +'<p>'+ROYAL_ORDER_ACTIONS[proposal.kind]+' · '+proposal.message+'</p>'

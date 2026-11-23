@@ -49,6 +49,12 @@ async function testDevice(browser, name, url) {
       assert.equal(await picker.inputValue(), view);
       await assertFits(page);
     }
+    await picker.selectOption('economy');
+    await page.locator('#royalUnlimitedIncome').check();
+    assert(await page.locator('#royalUnlimitedIncome').isChecked());
+    assert(await page.evaluate(()=>S.kingdom.treasury.unlimitedIncome===true));
+    await page.locator('#saveTop').tap();
+    assert(await page.evaluate(()=>JSON.parse(localStorage.getItem('sovereign-save-v1')).kingdom.treasury.unlimitedIncome===true));
     await picker.selectOption('history');
     assert(await page.getByRole('heading', {name:'أرشيف الأحداث', exact:true}).isVisible());
     assert(!/rules are in force/.test(await page.locator('#panel').innerText()));

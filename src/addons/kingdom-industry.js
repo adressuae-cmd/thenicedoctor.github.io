@@ -51,9 +51,10 @@ function approveRoyalFacility(type,region,company){
  const {industry,treasury,council:government}=S.kingdom;
  if(company!==undefined&&company!==spec.ministry)return false;
  const account=company?government.companies[company]:treasury;
- if(industry.facilities.length>=MAX_ROYAL_FACILITIES||account.cash<spec.capital||
+ if(industry.facilities.length>=MAX_ROYAL_FACILITIES||(company?account.cash<spec.capital:!royalTreasuryCanPay(spec.capital))||
    industry.facilities.some(site=>site.type===type&&site.region===region))return false;
- account.cash-=spec.capital;
+ if(company)account.cash-=spec.capital;
+ else debitRoyalTreasury(spec.capital);
  const site={type,region,ordered:S.month,ready:S.month+spec.months};
  if(company){
   Object.assign(site,{company,paused:false});
@@ -77,7 +78,7 @@ function settleRoyalIndustry(){
    if(site.type!==type||site.ready>S.month||site.paused)continue;
    const account=site.company?government.companies[site.company]:treasury;
    const [input,quantity]=spec.input??[];
-   const capacity={funding:account.cash/spec.cost,labor:workers[site.region]/spec.workers};
+   const capacity={funding:!site.company&&treasury.unlimitedIncome?1:account.cash/spec.cost,labor:workers[site.region]/spec.workers};
    if(input)capacity.feedstock=industry.stock[input]/quantity;
    if(spec.power)capacity.power=power/spec.power;
    const normalized=Object.entries(capacity).map(([key,value])=>[
@@ -95,9 +96,13 @@ function settleRoyalIndustry(){
    }
    workers[site.region]-=utilization*spec.workers;
    const cost=spec.cost*utilization;
-   account.cash=Math.max(0,account.cash-cost);
-   if(site.company)account.operating+=cost;
-   else spent+=cost;
+   if(site.company){
+    account.cash=Math.max(0,account.cash-cost);
+    account.operating+=cost;
+   }else{
+    debitRoyalTreasury(cost);
+    spent+=cost;
+   }
    runs.push({type,region:site.region,output,cost,workers:utilization*spec.workers,constraints});
   }
  }
@@ -169,7 +174,7 @@ function kingdomIndustrialRoadmap(){
  ];
  const achieved=milestones.filter(([done])=>done).length;
  const initialCost=['gas','mine'].reduce((cost,type)=>cost+(has(type)?0:INDUSTRIAL_SITES[type].capital),0);
- const fundingHelp=achieved===0&&S.player===KINGDOM.id&&S.kingdom.treasury.cash<initialCost
+ const fundingHelp=achieved===0&&S.player===KINGDOM.id&&!royalTreasuryCanPay(initialCost)
   ?'<p>تحتاج '+kingdomMoney(initialCost)+' لاستكمال اعتماد حقل الغاز ومنجم الحديد. حقّق فائضاً من السياسات، ثم قدّم شهراً ليدخل الخزينة.</p>'
    +'<button id="planBudget" class="full">فتح السياسات</button>':'';
  return '<section class="block" lang="ar" dir="rtl"><h3>خط الإنتاج الأول</h3>'+fundingHelp

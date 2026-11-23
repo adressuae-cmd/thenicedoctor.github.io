@@ -273,6 +273,29 @@ run('renderTick=()=>{}');
  assert.equal(fresh.run('S.kingdom.council.orders.length'),0);
  console.log('PASS: ministries, independent company cash, royal orders, Zayed approval and save migration');
 }
+// Unlimited income covers real expenses without introducing non-finite balances or debt.
+{
+ const game=makeGame('build/v15.html'),r=game.run;
+ r("startKingdom(1970,0)");
+ assert.equal(r("approveRoyalFacility('oil','SAU')"),false);
+ r("S.kingdom.treasury.unlimitedIncome=true");
+ assert(r("approveRoyalFacility('oil','SAU')"));
+ assert(r("executeRoyalOrder('appropriate','energy',{amount:10})"));
+ assert(r("transferKingdomFunds('deposit',15)"));
+ assert(r("S.kingdom.treasury.cash===0&&player().fund===15&&S.kingdom.council.ministries.energy.cash===10"));
+ assert(r("Math.abs(S.kingdom.treasury.extraIncome-25.12)<1e-9"));
+ r("for(let i=0;i<3;i++)$('step').onclick()");
+ assert(r("S.kingdom.treasury.last.borrowing===0&&S.kingdom.treasury.last.unfunded===0"));
+ assert(r("S.kingdom.industry.last.runs.some(run=>run.type==='oil'&&run.output>0)"));
+ const saved=r('JSON.stringify(S)');
+ const fresh=makeGame('build/v15.html');
+ fresh.scope.saved=saved;
+ fresh.run('loadSave(saved)');
+ assert.equal(fresh.run('JSON.stringify(S)'),saved);
+ fresh.run('S.kingdom.treasury.unlimitedIncome=false;S.kingdom.treasury.cash=0');
+ assert.equal(fresh.run("approveRoyalFacility('mine','SAU')"),false);
+ console.log('PASS: unlimited income, budget coverage, construction, transfers, and save persistence');
+}
 // node-only:end
 
 // ---- V6 boots into Easy, which is a world with no national debt at all.

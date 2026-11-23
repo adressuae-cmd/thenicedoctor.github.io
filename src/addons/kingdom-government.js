@@ -29,10 +29,12 @@ function royalFundingOrder(kind,sector,amount){
  const {treasury,council:government}=S.kingdom;
  const accounts={treasury,ministry:government.ministries[sector],company:government.companies[sector]};
  const [from,to]=ROYAL_FUNDING_ROUTES[kind].map(key=>accounts[key]);
- if(!Number.isFinite(amount)||amount<=0||amount-from.cash>1e-12)return 0;
- const settled=Math.min(amount,from.cash);
+ const unlimited=from===treasury&&treasury.unlimitedIncome;
+ if(!Number.isFinite(amount)||amount<=0||(!unlimited&&amount-from.cash>1e-12))return 0;
+ const settled=unlimited?amount:Math.min(amount,from.cash);
  if(!settled||!Number.isFinite(to.cash+settled))return 0;
- from.cash-=settled;
+ if(from===treasury)debitRoyalTreasury(settled);
+ else from.cash-=settled;
  to.cash+=settled;
  return settled;
 }
@@ -112,7 +114,7 @@ function royalProjectDependencies(type){
 
 function zayedRecommendations(region){
  if(!S.kingdom||!KINGDOM_REGION_IDS.has(region))return [];
- const {industry,council:government,treasury}=S.kingdom;
+ const {industry,council:government}=S.kingdom;
  return Object.keys(ROYAL_DELEGATES).flatMap(sector=>{
   const candidates=INDUSTRY_ORDER.filter(type=>INDUSTRIAL_SITES[type].ministry===sector&&
    !industry.facilities.some(site=>site.type===type&&site.region===region));
@@ -130,8 +132,8 @@ function zayedRecommendations(region){
   if(needed===0)return [{sector,kind:'construct',type:specKey,region,message,ready:true}];
   if(ministry.cash>=needed)return [{sector,kind:'capitalize',amount:needed,message,ready:true}];
   const amount=needed-ministry.cash;
-  return [{sector,kind:'appropriate',amount,message,ready:treasury.cash>=amount,
-   reason:treasury.cash<amount?'رصيد الخزينة لا يغطي التخصيص المقترح.':null}];
+  return [{sector,kind:'appropriate',amount,message,ready:royalTreasuryCanPay(amount),
+   reason:!royalTreasuryCanPay(amount)?'رصيد الخزينة لا يغطي التخصيص المقترح.':null}];
  });
 }
 
@@ -206,7 +208,7 @@ function royalCouncilPanel(n){
  const suggestions=owned?'<div class="block"><h3>زايد والوكلاء</h3>'
   +'<p>يجمع زايد توصيات وكلاء الوزارات. تُنفَّذ التوصية بعد اعتمادك.</p>'
   +'<p>توصيات إقليم '+n.regions.find(r=>r.id===region).name+'</p>'
-  +metric('الرصيد المتاح قبل التوصيات',kingdomMoney(S.kingdom.treasury.cash))
+  +metric('الرصيد المتاح قبل التوصيات',royalTreasuryDisplay())
   +zayedRecommendations(region).map((proposal,index)=>
    '<div class="projectcard"><strong>'+ROYAL_DELEGATES[proposal.sector]+'</strong>'
    +'<p>'+ROYAL_ORDER_ACTIONS[proposal.kind]+' · '+proposal.message+'</p>'
