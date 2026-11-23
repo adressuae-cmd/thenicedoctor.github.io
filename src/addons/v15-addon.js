@@ -211,7 +211,9 @@ tickSupply=function(n){
 // 2 for each after it. Each city still gets an ordinary project, financed and built on its own queue.
 function rolloutCapitalV15(count){return count?6+2*(count-1):0;}
 function rolloutPlanV15(n,type){
- const p=PROJECTS[type],limit=queueLimitV12(),cities=[],atLimit=[],full=[];
+ const p=PROJECTS[type],cities=[],atLimit=[],full=[];
+ // Kingdom bulk orders also respect the maximum queue length supported by saved games.
+ const limit=n.id===KINGDOM.id?Math.min(40,queueLimitV12()):queueLimitV12();
  for(const c of n.cities){
   if(c.levels[type]+c.queue.filter(q=>q.type===type).length>=5)atLimit.push(c);
   else if(c.queue.length>=limit)full.push(c);
@@ -219,21 +221,24 @@ function rolloutPlanV15(n,type){
  return {type,cities,atLimit,full,
   finance:cities.reduce((a,c)=>a+n.gdp*c.share*p.cost/100,0),
   months:cities.reduce((a,c)=>Math.max(a,instantBuild()?1:projectMonths(n,c,p)),0),
-  capital:rolloutCapitalV15(cities.length)};}
+  capital:n.id===KINGDOM.id?Math.min(100,rolloutCapitalV15(cities.length)):rolloutCapitalV15(cities.length)};}
 function rolloutV15(type){
  const n=current(),p=PROJECTS[type];
  if(!n||n.id!==S.player||!p)return false;
  const plan=rolloutPlanV15(n,type);
  if(!plan.cities.length){toast('No city can take this: each is at level 5 or has a full queue.');return false;}
- if(!canSpend(n,plan.capital)){toast('Building in '+plan.cities.length+' cities needs '+plan.capital+' political capital.');return false;}
+ if(!canSpend(n,plan.capital)){toast(n.id===KINGDOM.id?'يلزم '+KINGDOM_NUMBER.format(plan.capital)+' من رأس المال السياسي لاعتماد المشروع.':'Building in '+plan.cities.length+' cities needs '+plan.capital+' political capital.');return false;}
  spendCapital(n,plan.capital);
  for(const c of plan.cities){
   const duration=instantBuild()?1:projectMonths(n,c,p);
   c.queue.push({type,duration,remaining:duration,cost:n.gdp*c.share*p.cost/100,paused:false});}
- addEvent('A national development programme',n.name+' approves '+p.name.toLowerCase()+' in '+plan.cities.length
+ if(n.id===KINGDOM.id){
+  addEvent('اعتماد مشروع تطوير جماعي',kingdomLabel(p.name)+' · '+KINGDOM_NUMBER.format(plan.cities.length)
+   +' مدينة · التمويل الإجمالي '+kingdomMoney(plan.finance),'development');
+ }else addEvent('A national development programme',n.name+' approves '+p.name.toLowerCase()+' in '+plan.cities.length
   +(plan.cities.length===1?' city':' cities')+' at once, '+money(plan.finance)+' in total, financed city by city as each project runs.','development');
  renderPanel();renderStats();
- toast('Queued in '+plan.cities.length+(plan.cities.length===1?' city.':' cities.'));
+ toast(n.id===KINGDOM.id?'أُضيف المشروع إلى '+KINGDOM_NUMBER.format(plan.cities.length)+' مدينة.':'Queued in '+plan.cities.length+(plan.cities.length===1?' city.':' cities.'));
  return true;}
 let rolloutTypeV15=null;
 function rolloutSummaryV15(n,plan){
@@ -243,6 +248,26 @@ function rolloutSummaryV15(n,plan){
   +metric('Total finance',money(plan.finance))
   +metric('Longest build',plan.months+(plan.months===1?' month':' months'))
   +metric('Political capital',infiniteCapital(n)?'∞':String(plan.capital));}
+function kingdomCityRollout(n){
+ if(n.id!==S.player||n.cities.length<2)return '';
+ if(!Object.hasOwn(PROJECTS,rolloutTypeV15))rolloutTypeV15=Object.keys(PROJECTS)[0];
+ const plan=rolloutPlanV15(n,rolloutTypeV15),count=plan.cities.length;
+ const format=value=>KINGDOM_NUMBER.format(value);
+ const affordable=canSpend(n,plan.capital);
+ const options=Object.entries(PROJECTS).map(([key,project])=>
+  '<option value="'+key+'"'+(key===rolloutTypeV15?' selected':'')+'>'+escapeHTML(kingdomLabel(project.name))+'</option>').join('');
+ return '<section class="block rollout" lang="ar" dir="rtl"><h3>تطوير كل المدن</h3>'
+  +'<label for="rolloutType">نوع المشروع</label><select id="rolloutType" class="full">'+options+'</select>'
+  +metric('المدن المتاحة',format(count)+' من '+format(n.cities.length))
+  +(plan.atLimit.length?metric('بلغت حدّ التطوير',format(plan.atLimit.length)):'')
+  +(plan.full.length?metric('قائمة المشاريع ممتلئة',format(plan.full.length)):'')
+  +metric('تمويل البناء الإجمالي',kingdomMoney(plan.finance))
+  +metric('رأس المال السياسي المطلوب',infiniteCapital(n)?'لا يُخصم':format(plan.capital))
+  +(!affordable&&count?'<p class="note">رأس المال السياسي الحالي '+format(n.capital)+' من '+format(plan.capital)+' المطلوبة.</p>':'')
+  +'<button class="primary full" id="rolloutGo"'+(!count||!affordable?' disabled':'')+'>'
+  +(count?'إضافة المشروع إلى '+format(count)+' مدينة':'لا توجد مدن متاحة')+'</button></section>';
+}
+
 function rolloutBlockV15(n){
  if(n.cities.length<2)return '';
  if(!PROJECTS[rolloutTypeV15])rolloutTypeV15=Object.keys(PROJECTS)[0];
@@ -261,6 +286,7 @@ function rolloutBlockV15(n){
 const v14CitiesPanelV15=citiesV5Panel;
 citiesV5Panel=function(n){
  const html=v14CitiesPanelV15(n),anchor='<details class="controlgroup"><summary>Approve a new development';
+ if(n.id===KINGDOM.id)return kingdomCityRollout(n)+html;
  return html.includes(anchor)?html.replace(anchor,()=>rolloutBlockV15(n)+anchor):html;};
 const v14BindPanelV15=bindPanel;
 bindPanel=function(){

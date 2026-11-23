@@ -296,6 +296,19 @@ run('renderTick=()=>{}');
  assert.equal(fresh.run("approveRoyalFacility('mine','SAU')"),false);
  console.log('PASS: unlimited income, budget coverage, construction, transfers, and save persistence');
 }
+{
+ const {run:r}=makeGame('build/v15.html');
+ r("startKingdom();player().capital=100");
+ assert(r("citiesV5Panel(player()).indexOf('id=\"rolloutType\"')<citiesV5Panel(player()).indexOf('id=\"citySelect\"')"));
+ assert.equal(r("rolloutPlanV15(player(),'hospital').cities.length"),168);
+ assert.equal(r("rolloutPlanV15(player(),'hospital').capital"),100);
+ assert(r("rolloutV15('hospital')"));
+ assert(r("player().cities.every(c=>c.queue.length===1&&c.queue[0].type==='hospital')&&player().capital===0"));
+ assert(r("validSave(JSON.parse(JSON.stringify(S)))"));
+ r("S.options.unlimitedQueue=true;const fullCity=player().cities[0];while(fullCity.queue.length<40)fullCity.queue.push({type:'housing'})");
+ assert.equal(r("rolloutPlanV15(player(),'metro').full.length"),1);
+ console.log('PASS: one Kingdom order starts work in all 168 cities and is saveable');
+}
 // node-only:end
 
 // ---- V6 boots into Easy, which is a world with no national debt at all.

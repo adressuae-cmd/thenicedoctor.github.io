@@ -1011,3 +1011,22 @@ Object.assign(KINGDOM_LEGACY_LABELS,{
  'Era settings':'إعدادات الحقبة',
  'Trade openness':'الانفتاح التجاري'
 });
+
+Object.assign(KINGDOM_LEGACY_LABELS,{
+ 'Affordable housing district':'حي إسكان ميسور',
+ 'Transit corridor':'ممر نقل عام',
+ 'Hospital & primary-care network':'مستشفى وشبكة رعاية أولية',
+ 'University & technical college':'جامعة وكلية تقنية',
+ 'Industrial & logistics park':'مجمع صناعي ولوجستي',
+ 'Clean power & grid upgrades':'طاقة نظيفة وتحديث الشبكة',
+ 'Water & sanitation network':'شبكة المياه والصرف الصحي',
+ 'Broadband & digital services':'إنترنت سريع وخدمات رقمية',
+ 'Community safety precinct':'مركز سلامة المجتمع',
+ 'Courts & legal-access center':'محاكم ومركز خدمات قانونية',
+ 'Youth services & employment center':'مركز خدمات وتوظيف الشباب',
+ 'Waste & flood-resilience network':'شبكة إدارة النفايات والحماية من الفيضانات',
+ 'Freight & distribution terminal':'محطة الشحن والتوزيع',
+ 'Municipal simulation':'محاكاة المدينة',
+ 'Simulated crime pressure':'ضغط الجريمة في المحاكاة',
+ 'Low pressure':'ضغط منخفض'
+});

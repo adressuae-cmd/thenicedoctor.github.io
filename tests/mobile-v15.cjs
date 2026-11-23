@@ -44,6 +44,13 @@ async function testDevice(browser, name, url) {
     assert(!/rules are in force|MODEL|National debt/.test(await page.locator('#events .event').first().innerText()));
 
     const picker = page.locator('#mobileViewSelect');
+    await page.evaluate(()=>{player().capital=100});
+    await picker.selectOption('cities');
+    await page.getByRole('heading',{name:'تطوير كل المدن',exact:true}).waitFor();
+    await page.locator('#rolloutType').selectOption('hospital');
+    await page.locator('#rolloutGo').tap();
+    assert.equal(await page.evaluate(()=>player().cities.filter(c=>c.queue.some(p=>p.type==='hospital')).length),168);
+    await assertFits(page);
     for (const view of ['history', 'economy', 'agencies', 'policies', 'settings']) {
       await picker.selectOption(view);
       assert.equal(await picker.inputValue(), view);
