@@ -1,0 +1,93 @@
+#mobileViewField { display: none; }
+
+@media (max-width: 800px), (max-width: 1024px) and (pointer: coarse) {
+ html, body { max-inline-size: 100%; }
+ body { overflow: auto; padding-block-end: env(safe-area-inset-bottom, 0px); }
+ header {
+  padding-block-start: max(12px, env(safe-area-inset-top, 0px)) !important;
+  padding-left: max(12px, env(safe-area-inset-left, 0px)) !important;
+  padding-right: max(12px, env(safe-area-inset-right, 0px)) !important;
+  column-gap: 12px;
+  row-gap: 8px;
+ }
+ .brand, .brand > div { min-inline-size: 0; }
+ .brand strong { overflow-wrap: anywhere; }
+ .timecontrol { max-inline-size: 100%; justify-content: flex-start; flex-wrap: wrap; }
+ .timecontrol .date { flex: 1 0 100%; }
+ .timecontrol button, .topactions button { min-block-size: 44px; }
+ .topactions { display: flex; }
+ .topactions .divider { display: none; }
+
+ /* The desktop rail uses fixed grid columns. On a phone, the whole width belongs to the content. */
+ .app { display: block; inline-size: 100%; block-size: auto; }
+ .app::before { content: none; }
+ .app > nav {
+  position: sticky;
+  inset-block-start: env(safe-area-inset-top, 0px);
+  inset-inline: 0;
+  z-index: 12;
+  display: block;
+  inline-size: auto;
+  block-size: auto;
+  padding: 6px max(12px, env(safe-area-inset-right, 0px)) 6px max(12px, env(safe-area-inset-left, 0px));
+  background: var(--panel) !important;
+  border-block-end: 1px solid var(--line);
+ }
+ .app > nav > button, .app > nav > .spacer { display: none; }
+ #mobileViewField { display: flex; align-items: center; gap: 10px; }
+ #mobileViewField label { flex: none; }
+ #mobileViewSelect { flex: 1; min-inline-size: 0; min-block-size: 44px; padding-inline: 10px; }
+ .workspace {
+  inline-size: 100%;
+  min-inline-size: 0;
+  height: auto !important;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto clamp(260px, 46svh, 420px) auto !important;
+  overflow: visible;
+ }
+ .workspace > *, .eventlist > *, .inspector, .panelbody, .countryhead { min-inline-size: 0; }
+ .countryhead {
+  scroll-margin-block-start: calc(64px + env(safe-area-inset-top, 0px));
+ }
+ .countryrow h2, .dispatchrow, .events, .panelbody { overflow-wrap: anywhere; }
+ .maparea { min-height: 0; }
+ .events { padding-inline: 14px; }
+ .eventlist { grid-template-columns: minmax(0, 1fr) !important; }
+ .eventlist > .event:last-child { display: block; }
+ .panelbody { overflow: visible; }
+ .stickyaction { margin-inline: 0; padding-inline: 12px; bottom: env(safe-area-inset-bottom, 0px); }
+ .events .sectionhead { flex-wrap: wrap; gap: 8px; }
+ .inspector { inline-size: 100%; border-inline: 0; }
+ .panelbody table { display: block; max-inline-size: 100%; overflow-x: auto; }
+ .panelbody :is(select, input, button) { max-inline-size: 100%; }
+ :is(select, input:not([type=range]):not([type=checkbox]), textarea) { font-size: 16px; }
+
+ /* Keep the legend, zoom buttons and map exit on separate parts of the map. */
+ .maptop { top: max(14px, env(safe-area-inset-top, 0px)); left: max(12px, env(safe-area-inset-left, 0px)); }
+ .maptopright { left: max(12px, env(safe-area-inset-left, 0px)); top: calc(max(12px, env(safe-area-inset-top, 0px)) + 54px); }
+ .zoom { top: max(12px, env(safe-area-inset-top, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); bottom: auto; }
+ .zoom button { width: 44px; min-height: 44px; }
+ .mapbottom {
+  left: max(12px, env(safe-area-inset-left, 0px));
+  right: max(12px, env(safe-area-inset-right, 0px));
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  inline-size: fit-content;
+  max-inline-size: calc(100% - max(12px, env(safe-area-inset-left, 0px)) - max(12px, env(safe-area-inset-right, 0px)));
+  flex-wrap: wrap;
+ }
+ #map { touch-action: pan-y; }
+ body.mapfocus #map { touch-action: none; }
+ .mapbottom span:last-child { display: inline-block; }
+ .mapfocusbtn {
+  display: block;
+  right: max(12px, env(safe-area-inset-right, 0px));
+  bottom: max(12px, env(safe-area-inset-bottom, 0px));
+ }
+ body.mapfocus .app > nav { display: none; }
+ .overlay {
+  padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px))
+   max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+ }
+ .modal { min-inline-size: 0; max-inline-size: 100%; max-block-size: 100%; overflow-wrap: anywhere; }
+ .toast { inset-inline: 12px; transform: none; }
+}

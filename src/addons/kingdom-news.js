@@ -106,3 +106,24 @@ function kingdomFiveYearReview(n){
  return 'النمو '+newsPct(n.growth)+' والتضخم '+newsPct(n.inflation)+'. الناتج للفرد '
   +newsMoney(n.gdp/n.pop*1000)+' والبطالة '+newsPct(n.unemployment)+' والتأييد '+newsPct(n.approval)+'.';
 }
+
+const KINGDOM_DIFFICULTY_NEWS={
+ easy:'الدين العام معطّل. صدمات الإمداد نادرة وخفيفة، ويتجدد رأس المال السياسي أسرع وتقل تكلفة الإصلاحات.',
+ medium:'الدين العام مفعّل بشروط ميسّرة. تقع الصدمات بوتيرتها العادية وتبقى تكلفة الإصلاحات وتجدد رأس المال السياسي على المستوى المعتاد.',
+ hard:'تُحتسب خدمة الدين بالتكلفة العادية، وتكثر الصدمات وتشتد. يتجدد رأس المال السياسي ببطء وتزيد تكلفة الإصلاحات.'
+};
+
+function kingdomDifficultyNotice(key){
+ const level=DIFFICULTY[key];
+ if(!S.kingdom)return level.name+' rules are in force. '+level.blurb;
+ return 'المستوى '+kingdomLabel(level.name)+'. '+KINGDOM_DIFFICULTY_NEWS[key];
+}
+
+function kingdomEventBody(event){
+ if(S.kingdom&&(event.title==='Difficulty set'||event.title==='تحددت الصعوبة')){
+  for(const [key,level] of Object.entries(DIFFICULTY)){
+   if(event.body.startsWith(level.name+' rules are in force.'))return kingdomDifficultyNotice(key);
+  }
+ }
+ return kingdomLabel(event.body);
+}

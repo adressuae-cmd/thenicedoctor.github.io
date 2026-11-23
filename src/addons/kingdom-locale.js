@@ -1,10 +1,10 @@
 const KINGDOM_UI={
- Overview:'نظرة عامة',Cities:'المدن',Parties:'الحكم',Policies:'السياسات',Agencies:'الديوان الملكي',
+ Section:'القسم','Explore map':'استكشاف الخريطة',Done:'إغلاق الخريطة',model:'النموذج',Overview:'نظرة عامة',Cities:'المدن',Parties:'الحكم',Policies:'السياسات',Agencies:'الديوان الملكي',
  Economy:'الاقتصاد',Growth:'النمو','Central bank':'البنك المركزي',Trade:'التجارة',
  Diplomacy:'الدبلوماسية',Military:'الدفاع',Dispatch:'الأحداث',Sandbox:'الإعدادات',Guide:'الدليل',
  'Pause simulation':'إيقاف المحاكاة','Play simulation':'تشغيل المحاكاة',
  'Simulation running':'المحاكاة تعمل','Simulation paused':'المحاكاة متوقفة',
- 'National output':'الناتج الوطني',Population:'السكان','Public approval':'التأييد الشعبي',
+ 'National output':'الناتج الوطني','GDP · national output':'الناتج المحلي الإجمالي','NMP · national output':'صافي الناتج المادي','Simulation ready':'المحاكاة جاهزة',Population:'السكان','Public approval':'التأييد الشعبي',
  'Political capital':'رأس المال السياسي',Supportive:'مؤيد',Contested:'متباين',Unlimited:'غير محدود',
  Reforms:'الإصلاحات',Programs:'البرامج',Taxation:'الضرائب',Ideologies:'التوجهات',Society:'المجتمع',
  'Select nation':'اختيار الدولة','Your nation':'دولتك','Nation intelligence':'ملف الدولة','Playing as ':'تلعب باسم ',
@@ -32,6 +32,7 @@ const KINGDOM_SHELL_TEXT=[
  ['#mapmode option[value="ideology"]','Economic ideology','التوجه الاقتصادي'],
  ['#mapmode option[value="prosperity"]','Prosperity','الازدهار'],
  ['#mapmode option[value="stability"]','Stability','الاستقرار'],
+ ['#dispatchHeading','World dispatch','أحداث العالم'],
  ['#saveTop','Save','حفظ'],['#allEvents','View all ↗','عرض الأحداث']
 ];
 const KINGDOM_SHELL_ARIA=[
@@ -42,6 +43,7 @@ const KINGDOM_SHELL_ARIA=[
 ];
 
 const priorLocalizedRender=render;
+let renderedKingdomMode=false;
 render=function(){
  if(document.documentElement){
   document.documentElement.lang=S.kingdom?'ar':'en';
@@ -50,6 +52,14 @@ render=function(){
  const status=playing?'Simulation running':'Simulation paused';
  $('runstatus').textContent=kingdomLabel(status);
  priorLocalizedRender();
+ renderMobileViewPicker();
+ const kingdomMode=!!S.kingdom;
+ if(kingdomMode!==renderedKingdomMode){
+  renderedKingdomMode=kingdomMode;
+  $('mapmode').onchange?.();
+  const focusButton=$('mapFocusBtn');
+  if(focusButton)focusButton.textContent=kingdomLabel(mapFocus?'Done':'Explore map');
+ }
  for(const [selector,en,ar] of KINGDOM_SHELL_TEXT){
   const element=document.querySelector?.(selector);
   if(element)element.textContent=S.kingdom?ar:en;

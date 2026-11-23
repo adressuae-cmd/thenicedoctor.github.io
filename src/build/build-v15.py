@@ -78,8 +78,8 @@ rep("""+'</span><span>Target: '+n.targets[x.key]""",
     """+'</span><span>'+kingdomLabel('Target:')+' '+n.targets[x.key]""")
 
 rep("escapeHTML(e.title)", "escapeHTML(kingdomLabel(e.title))", count=2)
-rep("escapeHTML(e.body)", "escapeHTML(kingdomLabel(e.body))")
-rep("escapeHTML(e.body.slice(0,95))", "escapeHTML(kingdomLabel(e.body).slice(0,95))")
+rep("escapeHTML(e.body)", "escapeHTML(kingdomEventBody(e))")
+rep("escapeHTML(e.body.slice(0,95))", "escapeHTML(kingdomEventBody(e).slice(0,95))")
 rep("gameDate(e.month).toLocaleDateString('en',",
     "gameDate(e.month).toLocaleDateString(S.kingdom?'ar':'en',", count=2)
 rep("function toast(s){$('toast').textContent=s;", "function toast(s){$('toast').textContent=kingdomLabel(s);")
@@ -112,6 +112,41 @@ rep("""'the country'),
 rep("  addEvent('Five years under review',\n",
     "  if(S.kingdom)addEvent('مراجعة خمس سنوات',kingdomFiveYearReview(n),'dispatch');\n"
     "  else addEvent('Five years under review',\n")
+
+rep('width=device-width, initial-scale=1"', 'width=device-width, initial-scale=1, viewport-fit=cover"')
+rep('<span class="dot"></span> World dispatch</h2>',
+    '<span class="dot"></span> <span id="dispatchHeading">World dispatch</span></h2>')
+rep("b.textContent=mapFocus?'Done':'Explore map'", "b.textContent=kingdomLabel(mapFocus?'Done':'Explore map')")
+rep("b.textContent='Explore map'", "b.textContent=kingdomLabel('Explore map')")
+rep("DIFFICULTY[key].name+' rules are in force. '+DIFFICULTY[key].blurb", "kingdomDifficultyNotice(key)")
+rep("escapeHTML(e.tag)", "escapeHTML(kingdomLabel(e.tag))", count=s.count("escapeHTML(e.tag)"))
+rep("(e.body.length>95?'…':'')", "(kingdomEventBody(e).length>95?'…':'')")
+for label in (
+    'Your nation', 'Independent', 'Drag to pan · Scroll to zoom',
+    'Blue: market / conservative · Violet: social democratic', 'Green: state capitalist',
+    'Darker: lower output per person', 'Lighter: higher output per person',
+    'Red: fragile', 'Green: stable',
+):
+    # Only the JavaScript-generated legend contains the surrounding quoted HTML string.
+    end = '</span>'
+    legend_start = s.index("$('mapmode').onchange=()=>")
+    legend_end = s.index('requestDraw();};', legend_start)
+    legend = s[legend_start:legend_end]
+    translated = legend.replace(label + end, "'+kingdomLabel('" + label + "')+'" + end)
+    assert translated != legend, label
+    rep(legend, translated)
+
+rep("const isPhone=()=>innerWidth<=800;",
+    "const isPhone=()=>innerWidth<=800||(innerWidth<=1024&&typeof matchMedia==='function'&&matchMedia('(pointer: coarse)').matches);")
+rep("if(innerWidth<800)$('countryhead').scrollIntoView",
+    "if(isPhone())$('countryhead').scrollIntoView")
+
+rep("S.nations.length+' nations · '+(perf?perf.toFixed(1)+' ms / month':'Simulation ready')",
+    "S.nations.length+(S.kingdom?' دولة · ':' nations · ')+(perf?perf.toFixed(1)+"
+    "(S.kingdom?' ملّي ثانية لكل شهر':' ms / month'):kingdomLabel('Simulation ready'))")
+
+rep("S.options.outputMeasure==='nmp'?'NMP · modeled estimate':'GDP · national output'",
+    "kingdomLabel(S.options.outputMeasure==='nmp'?'NMP · modeled estimate':'GDP · national output')")
 
 # V12 attached its budget fit in render(). Opening the Ideologies tab only calls renderPanel(), which
 # rebinds the preset buttons without it, so in ordinary play the fit never ran. V15 attaches preset
@@ -165,14 +200,15 @@ css = '''
    that is not a stat card now spans the full row. */
 .previewgrid>:not(.minicard){grid-column:1/-1}
 '''
-rep('</style>', css + '\n</style>')
+rep('</style>', css + (SRC / 'addons' / 'sovereign-mobile.css').read_text() + '\n</style>')
 
 kingdom_map = (SRC / 'data' / 'kingdom-map-supplement.json').read_text().strip()
 rep('<script id="world-data"', '<script type="application/json" id="kingdom-map">'
     + kingdom_map + '</script>\n<script id="world-data"')
 addon = '\n'.join((SRC / 'addons' / name).read_text()
                   for name in ('v15-addon.js', 'kingdom-addon.js', 'kingdom-finance.js', 'kingdom-industry.js', 'kingdom-locale.js',
-                               'kingdom-government.js', 'kingdom-translations.js', 'kingdom-news.js'))
+                               'kingdom-government.js', 'kingdom-translations.js', 'kingdom-news.js',
+                               'sovereign-mobile.js'))
 rep('newGame();initPaths();render();installMobileMap();startScreen();',
     addon + '\nwatchKingdomTranslations();newGame();initPaths();render();installMobileMap();startScreen();')
 
